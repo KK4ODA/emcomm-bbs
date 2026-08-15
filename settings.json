@@ -1,0 +1,42 @@
+{
+  "directories": {
+    "input": "data/input",
+    "archive": "data/archive",
+    "output": "data/output",
+    "error": "data/error"
+  },
+  "time_windows": [
+    {
+      "name": "Morning Net",
+      "start": "08:00",
+      "end": "10:00"
+    },
+    {
+      "name": "Evening Net",
+      "start": "19:00",
+      "end": "21:00"
+    }
+  ],
+  "output": {
+    "generate_text": true,
+    "generate_html": true,
+    "generate_csv": true,
+    "html_auto_refresh": 30
+  },
+  "validation": {
+    "require_callsign": true,
+    "require_name": true,
+    "require_location": true,
+    "require_status": true,
+    "valid_statuses": [
+      "SAFE",
+      "NEED ASSISTANCE",
+      "TRAFFIC"
+    ]
+  },
+  "logging": {
+    "level": "INFO",
+    "max_file_size_mb": 10,
+    "backup_count": 5
+  }
+}

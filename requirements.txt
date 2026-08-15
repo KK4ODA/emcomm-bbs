@@ -1,0 +1,24 @@
+# Emcomm BBS — Python dependencies
+# Install with:  pip install -r requirements.txt
+#
+# Python 3.8 or newer is required.
+
+# --- Core -------------------------------------------------------------------
+requests>=2.31.0          # HTTP for all data-source APIs
+beautifulsoup4>=4.12.0    # HTML parsing for news scraping
+reportlab>=4.0.0          # PDF generation (legacy PDF output path)
+
+# --- Welfare Board ----------------------------------------------------------
+watchdog>=2.1.0           # Filesystem monitoring for incoming check-in files
+
+# --- Optional ---------------------------------------------------------------
+# AI-generated news summaries. Requires an Anthropic API key entered in the
+# Settings tab. Without it, plain headline lists are still produced.
+anthropic>=0.18.0
+
+# --- Bundled with Python (no install needed) --------------------------------
+# tkinter, datetime, threading, json, pathlib, os, csv, re, shutil, webbrowser
+#
+# tkinter is included with Python on Windows and macOS. On Linux:
+#   Ubuntu/Debian:  sudo apt-get install python3-tk
+#   Fedora:         sudo dnf install python3-tkinter

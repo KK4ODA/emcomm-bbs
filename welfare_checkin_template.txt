@@ -1,0 +1,14 @@
+CALLSIGN: (or leave blank if not a licensed ham)
+
+NAME: 
+
+LOCATION: 
+
+STATUS: (SAFE / NEED ASSISTANCE / TRAFFIC)
+
+POWER: (ON / OFF / GENERATOR)
+
+CONTACT: (Phone# for SMS or Email to notify family)
+
+MESSAGE: 
+

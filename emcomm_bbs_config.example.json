@@ -1,0 +1,28 @@
+{
+  "_comment": "Copy this file to emcomm_bbs_config.json and fill in your own values. emcomm_bbs_config.json is gitignored and must never be committed - it holds your API keys.",
+
+  "save_directory": "C:\\VarAC BBS",
+
+  "anthropic_api_key": "",
+  "twitter_token": "",
+  "nextdoor_key": "",
+
+  "twitter_handles": "NWS,fema,USGS_Quakes,NWSAlerts,CDCgov,NHC_Atlantic",
+  "nextdoor_zips": "",
+
+  "time_windows": [
+    { "name": "All Day", "start": "00:00", "end": "23:59" }
+  ],
+
+  "weather_regions": [4],
+
+  "checkboxes": {
+    "news": true,
+    "weather": true,
+    "space": true,
+    "emergency": true,
+    "twitter": false,
+    "power": true,
+    "nextdoor": false
+  }
+}

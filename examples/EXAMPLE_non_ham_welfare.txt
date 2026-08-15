@@ -1,0 +1,14 @@
+CALLSIGN: 
+
+NAME: Maria Garcia
+
+LOCATION: Decatur, GA
+
+STATUS: SAFE
+
+POWER: OFF
+
+CONTACT: 404-555-0199
+
+MESSAGE: No power since yesterday. Family of 4 is safe. Using neighbor's ham radio to check in.
+

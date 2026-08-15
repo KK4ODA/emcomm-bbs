@@ -1,0 +1,14 @@
+CALLSIGN: KK4ODA
+
+NAME: Fantasma Benito
+
+LOCATION: Atlanta, GA
+
+STATUS: SAFE
+
+POWER: GENERATOR
+
+CONTACT: family@example.com
+
+MESSAGE: Running on generator. All systems nominal. Please notify family via email.
+
