@@ -3,9 +3,12 @@ Welfare Board - Parser Module
 Extracts structured data from welfare check-in text files
 """
 
+import logging
 import re
 from datetime import datetime
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 
 class WelfareParser:
@@ -89,7 +92,7 @@ class WelfareParser:
             return parsed_data
             
         except Exception as e:
-            print(f"Error parsing file {filepath}: {e}")
+            log.warning("Error parsing %s: %s", filepath, e)
             return None
     
     def _strip_hint_text(self, field_name, value):
@@ -212,30 +215,3 @@ class WelfareParser:
         
         return '\n'.join(output)
 
-
-if __name__ == '__main__':
-    # Test the parser
-    parser = WelfareParser()
-    
-    # Create test file
-    test_content = """CALLSIGN: KD8XXX
-NAME: John Smith  
-LOCATION: Atlanta, GA
-STATUS: SAFE
-MESSAGE: All systems operational, power restored at 18:00.
-Weather conditions improving.
-"""
-    
-    test_file = Path('test_welfare.txt')
-    test_file.write_text(test_content)
-    
-    # Parse it
-    result = parser.parse_file(test_file)
-    if result:
-        print("Parse successful!")
-        print(parser.format_for_display(result))
-    else:
-        print("Parse failed!")
-    
-    # Cleanup
-    test_file.unlink()

@@ -3,9 +3,9 @@ Welfare Board - Aggregator Module
 Groups welfare check-ins by time windows
 """
 
-from datetime import datetime, time, timedelta
-from pathlib import Path
 import json
+from datetime import datetime
+from pathlib import Path
 
 
 class WelfareAggregator:
@@ -368,46 +368,3 @@ class WelfareAggregator:
         
         return summary
 
-
-if __name__ == '__main__':
-    # Test the aggregator
-    config = {
-        'time_windows': [
-            {'name': 'Morning Net', 'start': '08:00', 'end': '10:00'},
-            {'name': 'Evening Net', 'start': '19:00', 'end': '21:00'}
-        ]
-    }
-    
-    aggregator = WelfareAggregator(config)
-    
-    # Simulate check-ins
-    test_checkin1 = {
-        'callsign': 'KD8XXX',
-        'name': 'John Smith',
-        'location': 'Atlanta, GA',
-        'status': 'SAFE',
-        'message': 'All clear',
-        'received_time': datetime.now().replace(hour=19, minute=15)
-    }
-    
-    test_checkin2 = {
-        'callsign': 'W1ABC',
-        'name': 'Jane Doe',
-        'location': 'Boston, MA',
-        'status': 'SAFE',
-        'message': 'Everything OK',
-        'received_time': datetime.now().replace(hour=19, minute=30)
-    }
-    
-    # Add check-ins
-    success1, msg1, window1 = aggregator.add_checkin(test_checkin1, test_checkin1['received_time'])
-    print(f"Check-in 1: {msg1}")
-    
-    success2, msg2, window2 = aggregator.add_checkin(test_checkin2, test_checkin2['received_time'])
-    print(f"Check-in 2: {msg2}")
-    
-    # Print summary
-    print("\nSummary:")
-    for window_summary in aggregator.get_summary():
-        print(f"  {window_summary['time_range']}: {window_summary['total_checkins']} check-ins")
-        print(f"    Callsigns: {', '.join(window_summary['callsigns'])}")

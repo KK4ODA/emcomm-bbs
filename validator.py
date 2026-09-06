@@ -294,33 +294,3 @@ class WelfareValidator:
         
         return '\n'.join(report)
 
-
-if __name__ == '__main__':
-    # Test the validator
-    validator = WelfareValidator()
-    
-    # Test case 1: Valid data
-    print("Test 1: Valid data")
-    valid_data = {
-        'callsign': 'KD8XXX',
-        'name': 'John Smith',
-        'location': 'Atlanta, GA',
-        'status': 'SAFE',
-        'message': 'All clear',
-        'filename': 'test.txt'
-    }
-    is_valid, errors = validator.validate(valid_data)
-    print(validator.create_validation_report(valid_data, is_valid, errors))
-    print()
-    
-    # Test case 2: Missing required fields
-    print("Test 2: Missing required fields")
-    invalid_data = {
-        'callsign': 'KD8XXX',
-        'name': '',
-        'location': None,
-        'status': 'INVALID_STATUS',
-        'filename': 'test2.txt'
-    }
-    is_valid, errors = validator.validate(invalid_data)
-    print(validator.create_validation_report(invalid_data, is_valid, errors))

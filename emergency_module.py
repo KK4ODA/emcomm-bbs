@@ -1,462 +1,276 @@
 """
-Emergency Information Module
-Fetches critical emergency data for local/regional awareness
+Emcomm BBS - Emergency information sources
+
+    EmergencyDataFetcher          NWS alerts, USGS earthquakes, FEMA declarations,
+                                  NIFC wildfire counts
+    SocialMediaEmergencyFetcher   Recent posts from official accounts on X (API v2)
+    EmergencyResourcesFetcher     Static preparedness reference (phone numbers, kit list)
+
+List-returning fetchers return ``[{'error': ...}]`` on failure so callers can
+render the failure inline; dict-returning fetchers return ``{'error': ...}``.
 """
 
+import logging
+import time
+from datetime import datetime, timedelta, timezone
+
 import requests
-from datetime import datetime, timedelta
-from bs4 import BeautifulSoup
-import json
+
+log = logging.getLogger(__name__)
+
+USER_AGENT = "EmcommBBS/1.4 (+https://github.com/KK4ODA/emcomm-bbs)"
+TIMEOUT = 15
 
 
 class EmergencyDataFetcher:
-    """Fetches emergency and alert information from multiple sources"""
-    
+    """Public government feeds. No API keys required."""
+
     def __init__(self):
-        self.user_agent = {'User-Agent': '(EmergencyApp, contact@example.com)'}
-    
+        self.session = requests.Session()
+        self.session.headers.update({'User-Agent': USER_AGENT, 'Accept': 'application/json'})
+
     def get_all_emergency_data(self, user_state=None):
-        """Fetch all emergency-related data"""
-        data = {
+        return {
             'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M"),
             'nws_alerts': self.get_nws_alerts(user_state),
             'usgs_earthquakes': self.get_recent_earthquakes(),
             'fema_disasters': self.get_fema_disasters(),
-            'fire_incidents': self.get_active_fires()
+            'fire_incidents': self.get_active_fires(),
         }
-        return data
-    
-    def get_nws_alerts(self, state=None):
-        """Get National Weather Service active alerts"""
+
+    def get_nws_alerts(self, state=None, limit=20):
+        """Active NWS alerts, optionally filtered to a two-letter state code."""
+        url = "https://api.weather.gov/alerts/active"
+        params = {'area': state} if state else None
         try:
-            if state:
-                url = f"https://api.weather.gov/alerts/active?area={state}"
-            else:
-                url = "https://api.weather.gov/alerts/active"
-            
-            response = requests.get(url, headers=self.user_agent, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                alerts = []
-                for feature in data.get('features', [])[:20]:  # Limit to 20
-                    props = feature.get('properties', {})
-                    alerts.append({
-                        'event': props.get('event'),
-                        'severity': props.get('severity'),
-                        'urgency': props.get('urgency'),
-                        'areas': props.get('areaDesc'),
-                        'headline': props.get('headline'),
-                        'description': props.get('description', '')[:1500],  # Increased from 500 to 1500
-                        'effective': props.get('effective'),
-                        'expires': props.get('expires')
-                    })
-                return alerts
-            return []
-        except Exception as e:
-            return [{'error': str(e)}]
-    
-    def get_recent_earthquakes(self):
-        """Get recent significant earthquakes from USGS"""
+            r = self.session.get(url, params=params, timeout=TIMEOUT)
+            r.raise_for_status()
+            features = r.json().get('features', [])
+        except (requests.RequestException, ValueError) as exc:
+            return [{'error': f"NWS: {exc}"}]
+
+        alerts = []
+        for feature in features[:limit]:
+            props = feature.get('properties', {})
+            alerts.append({
+                'event': props.get('event'),
+                'severity': props.get('severity'),
+                'urgency': props.get('urgency'),
+                'areas': props.get('areaDesc'),
+                'headline': props.get('headline'),
+                'description': (props.get('description') or '')[:1500],
+                'effective': props.get('effective'),
+                'expires': props.get('expires'),
+            })
+        return alerts
+
+    def get_recent_earthquakes(self, limit=15):
+        """M4.5+ earthquakes worldwide in the last 7 days (USGS)."""
+        url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson"
         try:
-            # Earthquakes M4.5+ in last 7 days
-            url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson"
-            response = requests.get(url, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                quakes = []
-                for feature in data.get('features', [])[:15]:
-                    props = feature.get('properties', {})
-                    coords = feature.get('geometry', {}).get('coordinates', [])
-                    quakes.append({
-                        'magnitude': props.get('mag'),
-                        'location': props.get('place'),
-                        'time': datetime.fromtimestamp(props.get('time', 0) / 1000).strftime('%Y-%m-%d %H:%M UTC'),
-                        'depth': coords[2] if len(coords) > 2 else None,
-                        'url': props.get('url')
-                    })
-                return quakes
-            return []
-        except Exception as e:
-            return [{'error': str(e)}]
-    
-    def get_cdc_info(self):
-        """Get CDC outbreak and health alert information"""
-        # Note: CDC doesn't have a simple public API, so we get general status
-        try:
-            info = {
-                'message': 'Check CDC.gov for latest outbreak information',
-                'resources': [
-                    'Outbreak updates: https://www.cdc.gov/outbreaks/',
-                    'Travel health: https://wwwnc.cdc.gov/travel/notices',
-                    'Emergency preparedness: https://emergency.cdc.gov/'
-                ]
-            }
-            return info
-        except Exception as e:
-            return {'error': str(e)}
-    
-    def get_fema_disasters(self):
-        """Get FEMA disaster declarations"""
-        try:
-            url = "https://www.fema.gov/api/open/v2/DisasterDeclarationsSummaries"
-            params = {
-                '$filter': f"declarationDate ge '{(datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')}'",
-                '$orderby': 'declarationDate desc',
-                '$top': '20'
-            }
-            response = requests.get(url, params=params, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                disasters = []
-                for item in data.get('DisasterDeclarationsSummaries', []):
-                    disasters.append({
-                        'disaster_number': item.get('disasterNumber'),
-                        'state': item.get('state'),
-                        'declaration_type': item.get('declarationType'),
-                        'incident_type': item.get('incidentType'),
-                        'title': item.get('declarationTitle'),
-                        'date': item.get('declarationDate'),
-                        'incident_begin': item.get('incidentBeginDate')
-                    })
-                return disasters
-            return []
-        except Exception as e:
-            return [{'error': str(e)}]
-    
-    def get_air_quality_alerts(self):
-        """Get air quality alerts from AirNow"""
-        try:
-            # This would need AirNow API key for full functionality
-            # Returning placeholder for now
-            return {
-                'message': 'Check AirNow.gov for current air quality in your area',
-                'url': 'https://www.airnow.gov/',
-                'note': 'Air quality data available with API key'
-            }
-        except Exception as e:
-            return {'error': str(e)}
-    
-    def get_active_fires(self):
-        """Get active wildfire information"""
-        try:
-            # NASA FIRMS provides fire data
-            url = "https://firms.modaps.eosdis.nasa.gov/api/country/csv/MODIS_NRT/USA/1"
-            response = requests.get(url, timeout=10)
-            if response.status_code == 200:
-                lines = response.text.split('\n')
-                if len(lines) > 1:
-                    fire_count = len(lines) - 2  # Minus header and empty line
-                    return {
-                        'active_fires_24h': fire_count,
-                        'message': f'{fire_count} thermal anomalies detected in last 24 hours',
-                        'source': 'NASA FIRMS',
-                        'note': 'Includes wildfires and other heat sources',
-                        'url': 'https://firms.modaps.eosdis.nasa.gov/map/'
-                    }
-            return {'message': 'No data available'}
-        except Exception as e:
-            return {'error': str(e)}
-    
-    def get_power_outage_summary(self):
-        """Get power outage summary information"""
-        # Note: No single national API, individual utilities have their own
-        return {
-            'message': 'Check local utility websites for outage information',
-            'resources': [
-                'PowerOutage.us - National map',
-                'Your local utility website',
-                'FEMA emergency updates'
-            ],
-            'note': 'Real-time outage data requires utility-specific APIs'
+            r = self.session.get(url, timeout=TIMEOUT)
+            r.raise_for_status()
+            features = r.json().get('features', [])
+        except (requests.RequestException, ValueError) as exc:
+            return [{'error': f"USGS: {exc}"}]
+
+        quakes = []
+        for feature in features[:limit]:
+            props = feature.get('properties', {})
+            coords = feature.get('geometry', {}).get('coordinates', [])
+            when = datetime.fromtimestamp((props.get('time') or 0) / 1000, tz=timezone.utc)
+            quakes.append({
+                'magnitude': props.get('mag'),
+                'location': props.get('place'),
+                'time': when.strftime('%Y-%m-%d %H:%M UTC'),
+                'depth': round(coords[2]) if len(coords) > 2 and coords[2] is not None else None,
+                'url': props.get('url'),
+            })
+        return quakes
+
+    def get_fema_disasters(self, days=30, limit=20):
+        """FEMA disaster declarations from the last ``days`` days."""
+        url = "https://www.fema.gov/api/open/v2/DisasterDeclarationsSummaries"
+        since = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+        params = {
+            '$filter': f"declarationDate ge '{since}'",
+            '$orderby': 'declarationDate desc',
+            '$top': str(limit),
         }
-    
-    def get_eas_messages(self):
-        """Get Emergency Alert System messages"""
-        # EAS messages are typically broadcast-only
-        # IPAWS (Integrated Public Alert & Warning System) info
+        try:
+            r = self.session.get(url, params=params, timeout=TIMEOUT)
+            r.raise_for_status()
+            items = r.json().get('DisasterDeclarationsSummaries', [])
+        except (requests.RequestException, ValueError) as exc:
+            return [{'error': f"FEMA: {exc}"}]
+
+        return [{
+            'disaster_number': item.get('disasterNumber'),
+            'state': item.get('state'),
+            'declaration_type': item.get('declarationType'),
+            'incident_type': item.get('incidentType'),
+            'title': item.get('declarationTitle'),
+            'date': (item.get('declarationDate') or '')[:10],
+            'incident_begin': item.get('incidentBeginDate'),
+        } for item in items]
+
+    WFIGS_URL = ("https://services3.arcgis.com/T4QMspbfLg3qTGWY/arcgis/rest/services/"
+                 "WFIGS_Incident_Locations_Current/FeatureServer/0/query")
+
+    def get_active_fires(self, top=8, min_acres=100):
+        """Current wildfire incidents from NIFC's WFIGS feed (no key needed).
+
+        Returns the national count plus the ``top`` largest fires of at
+        least ``min_acres`` acres.
+        """
+        try:
+            r = self.session.get(self.WFIGS_URL, timeout=TIMEOUT, params={
+                'where': "IncidentTypeCategory='WF'", 'returnCountOnly': 'true', 'f': 'json'})
+            r.raise_for_status()
+            count = int(r.json().get('count', 0))
+
+            r = self.session.get(self.WFIGS_URL, timeout=TIMEOUT, params={
+                'where': f"IncidentTypeCategory='WF' AND IncidentSize >= {int(min_acres)}",
+                'outFields': 'IncidentName,POOState,POOCounty,IncidentSize,PercentContained',
+                'orderByFields': 'IncidentSize DESC', 'resultRecordCount': int(top), 'f': 'json'})
+            r.raise_for_status()
+            features = r.json().get('features', [])
+        except (requests.RequestException, ValueError) as exc:
+            return {'error': f"NIFC WFIGS: {exc}"}
+
+        largest = []
+        for feature in features:
+            a = feature.get('attributes', {})
+            largest.append({
+                'name': (a.get('IncidentName') or '').strip().title(),
+                'state': (a.get('POOState') or '').replace('US-', ''),
+                'county': a.get('POOCounty') or '',
+                'acres': int(a.get('IncidentSize') or 0),
+                'contained': a.get('PercentContained'),
+            })
         return {
-            'message': 'EAS alerts delivered via broadcast and wireless',
-            'resources': [
-                'FEMA IPAWS: https://www.fema.gov/emergency-managers/practitioners/integrated-public-alert-warning-system',
-                'Enable Wireless Emergency Alerts on your phone',
-                'Monitor NOAA Weather Radio'
-            ],
-            'note': 'Check local emergency management websites for current alerts'
+            'active_fires': count,
+            'largest': largest,
+            'message': f'{count} active wildfire incidents nationwide',
+            'source': 'NIFC WFIGS',
+            'url': 'https://data-nifc.opendata.arcgis.com/',
         }
 
 
 class SocialMediaEmergencyFetcher:
+    """Recent posts from official emergency accounts via the X API v2.
+
+    Each account has a lookback window and result cap tuned to how often it
+    posts, so high-volume accounts (NWS) don't crowd out rare but important
+    ones (USGS big quakes).
     """
-    Fetches emergency information from social media
-    Note: Twitter API requires authentication and has rate limits
-    """
-    
-    def __init__(self, twitter_bearer_token=None, custom_accounts=None):
-        self.twitter_token = twitter_bearer_token
-        
-        # Use custom accounts if provided, otherwise use defaults
-        if custom_accounts and isinstance(custom_accounts, list) and len(custom_accounts) > 0:
-            self.emergency_accounts = custom_accounts
-        else:
-            # Default emergency accounts
-            self.emergency_accounts = [
-                'NWS',           # National Weather Service
-                'fema',          # FEMA
-                'USGS_Quakes',   # USGS Earthquakes
-                'NWSAlerts',     # NWS Alerts
-                'CDCgov',        # CDC
-                'NHC_Atlantic',  # National Hurricane Center
-                'USGSBigQuakes', # USGS Big Earthquakes
-                'FBI',           # FBI
-                'DHSgov',        # Dept of Homeland Security
-                'EPA',           # EPA
-                'USCG',          # Coast Guard
-                'USNationalGuard', # National Guard
-            ]
-    
+
+    DEFAULT_ACCOUNTS = [
+        'NWS', 'fema', 'USGS_Quakes', 'NWSAlerts', 'CDCgov', 'NHC_Atlantic',
+        'USGSBigQuakes', 'FBI', 'DHSgov', 'EPA', 'USCG', 'USNationalGuard',
+    ]
+    DEFAULT_STRATEGY = {'window_hours': 12, 'max_results': 10, 'priority': 'medium'}
+    STRATEGIES = {
+        'NWS':            {'window_hours': 6,  'max_results': 25, 'priority': 'critical'},
+        'NWSAlerts':      {'window_hours': 6,  'max_results': 25, 'priority': 'critical'},
+        'NHC_Atlantic':   {'window_hours': 8,  'max_results': 20, 'priority': 'critical'},
+        'USGS_Quakes':    {'window_hours': 24, 'max_results': 20, 'priority': 'high'},
+        'USGSBigQuakes':  {'window_hours': 48, 'max_results': 15, 'priority': 'high'},
+        'fema':           {'window_hours': 12, 'max_results': 15, 'priority': 'high'},
+        'CDCgov':         {'window_hours': 24, 'max_results': 10, 'priority': 'medium'},
+        'DHSgov':         {'window_hours': 24, 'max_results': 10, 'priority': 'medium'},
+        'FBI':            {'window_hours': 48, 'max_results': 5,  'priority': 'low'},
+        'EPA':            {'window_hours': 48, 'max_results': 5,  'priority': 'low'},
+        'USCG':           {'window_hours': 24, 'max_results': 8,  'priority': 'low'},
+        'USNationalGuard': {'window_hours': 48, 'max_results': 5, 'priority': 'low'},
+    }
+    PRIORITY_ORDER = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3}
+    SEARCH_URL = "https://api.twitter.com/2/tweets/search/recent"
+
+    def __init__(self, bearer_token=None, custom_accounts=None):
+        self.twitter_token = bearer_token
+        self.emergency_accounts = list(custom_accounts) if custom_accounts else list(self.DEFAULT_ACCOUNTS)
+
     def get_emergency_tweets(self):
-        """
-        Get recent tweets from emergency agencies using smart adaptive strategy
-        Different time windows and limits based on account type and importance
-        Requires Twitter API v2 bearer token
-        """
+        """Return a priority-sorted list of tweets, or a dict describing why not."""
         if not self.twitter_token:
             return {
-                'error': 'Twitter API token not configured',
-                'message': 'To enable Twitter feeds, add a Twitter API bearer token',
-                'instructions': [
-                    '1. Sign up for Twitter API at https://developer.twitter.com/',
-                    '2. Create a project and get bearer token',
-                    '3. Add token to the app configuration',
-                    '4. Free tier allows 500,000 tweets/month'
-                ],
-                'alternative': 'Check these accounts directly on Twitter/X'
+                'error': 'X API token not configured',
+                'message': 'Add a bearer token in Settings to enable the feed',
             }
-        
-        try:
-            from datetime import datetime, timedelta
-            
-            headers = {
-                'Authorization': f'Bearer {self.twitter_token}',
-                'User-Agent': 'EmergencyNewsApp/1.0'
+
+        headers = {'Authorization': f'Bearer {self.twitter_token}', 'User-Agent': USER_AGENT}
+        tweets, errors = [], []
+        for account in self.emergency_accounts:
+            strategy = self.STRATEGIES.get(account, self.DEFAULT_STRATEGY)
+            since = datetime.now(timezone.utc) - timedelta(hours=strategy['window_hours'])
+            params = {
+                'query': f'from:{account} -is:retweet',
+                'start_time': since.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'max_results': strategy['max_results'],
+                'tweet.fields': 'created_at,text',
             }
-            tweets = []
-            errors = []
-            
-            # Smart adaptive strategies for different account types
-            account_strategies = self._get_account_strategies()
-            
-            # Get tweets from each account with adaptive strategy
-            for account in self.emergency_accounts:
-                try:
-                    # Get strategy for this account (or use default)
-                    strategy = account_strategies.get(account, {
-                        'window_hours': 12,
-                        'max_results': 10,
-                        'priority': 'medium'
-                    })
-                    
-                    # Calculate start time based on adaptive window
-                    start_time = (datetime.utcnow() - timedelta(hours=strategy['window_hours'])).isoformat() + 'Z'
-                    
-                    url = f"https://api.twitter.com/2/tweets/search/recent"
-                    params = {
-                        'query': f'from:{account} -is:retweet',
-                        'start_time': start_time,  # Time-filtered for recency
-                        'max_results': strategy['max_results'],
-                        'tweet.fields': 'created_at,text,author_id,entities',
-                        'user.fields': 'username',
-                    }
-                    
-                    response = requests.get(url, headers=headers, params=params, timeout=15)
-                    
-                    if response.status_code == 200:
-                        data = response.json()
-                        tweet_count = 0
-                        
-                        for tweet in data.get('data', []):
-                            tweet_text = tweet.get('text', '')
-                            
-                            # Skip if text is empty
-                            if not tweet_text:
-                                continue
-                            
-                            # Calculate tweet age
-                            created_at = tweet.get('created_at', '')
-                            age_hours = self._calculate_tweet_age(created_at)
-                            
-                            # Check for truncation markers
-                            is_truncated = tweet_text.endswith('…') or tweet_text.endswith('...')
-                            
-                            if is_truncated:
-                                print(f"WARNING: Tweet from @{account} appears truncated: {len(tweet_text)} chars")
-                            
-                            tweet_count += 1
-                            tweets.append({
-                                'account': account,
-                                'text': tweet_text,
-                                'created_at': created_at,
-                                'age_hours': age_hours,
-                                'priority': strategy['priority'],
-                            })
-                        
-                        if tweet_count > 0:
-                            avg_length = sum(len(t['text']) for t in tweets[-tweet_count:]) // tweet_count
-                            print(f"DEBUG: @{account} - {tweet_count} tweets (last {strategy['window_hours']}h, {strategy['priority']} priority), avg length: {avg_length} chars")
-                        else:
-                            print(f"DEBUG: No recent tweets from @{account} (last {strategy['window_hours']}h)")
-                    elif response.status_code == 401:
-                        errors.append(f"Authentication failed - check token")
-                        break  # Don't continue if auth fails
-                    elif response.status_code == 429:
-                        errors.append(f"Rate limit exceeded")
-                        break
-                    else:
-                        errors.append(f"{account}: HTTP {response.status_code}")
-                    
-                    # Small delay to avoid rate limits
-                    import time
-                    time.sleep(0.5)
-                    
-                except Exception as e:
-                    errors.append(f"{account}: {str(e)}")
+            try:
+                r = requests.get(self.SEARCH_URL, headers=headers, params=params, timeout=TIMEOUT)
+            except requests.RequestException as exc:
+                errors.append(f"{account}: {exc}")
+                continue
+
+            if r.status_code == 401:
+                errors.append("Authentication failed - check the bearer token")
+                break
+            if r.status_code == 429:
+                errors.append("Rate limit exceeded - try again later")
+                break
+            if r.status_code != 200:
+                errors.append(f"{account}: HTTP {r.status_code}")
+                continue
+
+            for tweet in r.json().get('data', []):
+                text = tweet.get('text', '')
+                if not text:
                     continue
-            
-            # Sort tweets by priority and recency
-            if tweets:
-                tweets = self._sort_tweets_by_priority(tweets)
-                return tweets
-            elif errors:
-                return {
-                    'error': 'Failed to retrieve tweets',
-                    'details': errors,
-                    'message': 'Check token and rate limits at developer.twitter.com'
-                }
-            else:
-                return {
-                    'message': 'No recent tweets from emergency accounts',
-                    'note': 'Accounts may not have posted recently'
-                }
-                
-        except Exception as e:
-            return {
-                'error': str(e),
-                'message': 'Twitter API error - check token and connection'
-            }
-    
-    def _get_account_strategies(self):
-        """Define smart adaptive strategies for different account types"""
-        return {
-            # CRITICAL WEATHER ALERTS - High volume, extremely time-sensitive
-            'NWS': {
-                'window_hours': 6,   # Only last 6 hours (posts very frequently)
-                'max_results': 25,   # Get many tweets
-                'priority': 'critical'
-            },
-            'NWSAlerts': {
-                'window_hours': 6,   # Time-sensitive alerts
-                'max_results': 25,
-                'priority': 'critical'
-            },
-            'NHC_Atlantic': {
-                'window_hours': 8,   # Hurricane updates, slightly less frequent
-                'max_results': 20,
-                'priority': 'critical'
-            },
-            
-            # HIGH PRIORITY - Event-based, need longer window for sparse events
-            'USGS_Quakes': {
-                'window_hours': 24,  # Earthquakes don't happen every hour
-                'max_results': 20,
-                'priority': 'high'
-            },
-            'USGSBigQuakes': {
-                'window_hours': 48,  # Major quakes (M5.5+) are rare
-                'max_results': 15,
-                'priority': 'high'
-            },
-            'fema': {
-                'window_hours': 12,  # Disaster updates, moderate frequency
-                'max_results': 15,
-                'priority': 'high'
-            },
-            
-            # MEDIUM PRIORITY - Important but slower-moving
-            'CDCgov': {
-                'window_hours': 24,  # Health alerts, not minute-by-minute
-                'max_results': 10,
-                'priority': 'medium'
-            },
-            'DHSgov': {
-                'window_hours': 24,  # Security updates
-                'max_results': 10,
-                'priority': 'medium'
-            },
-            
-            # LOW PRIORITY - Informational, low posting volume
-            'FBI': {
-                'window_hours': 48,  # Posts rarely, longer window needed
-                'max_results': 5,
-                'priority': 'low'
-            },
-            'EPA': {
-                'window_hours': 48,  # Environmental updates, not urgent
-                'max_results': 5,
-                'priority': 'low'
-            },
-            'USCG': {
-                'window_hours': 24,  # Marine/coastal alerts
-                'max_results': 8,
-                'priority': 'low'
-            },
-            'USNationalGuard': {
-                'window_hours': 48,  # Posts infrequently
-                'max_results': 5,
-                'priority': 'low'
-            },
-        }
-    
-    def _calculate_tweet_age(self, created_at_str):
-        """Calculate how many hours ago a tweet was posted"""
-        if not created_at_str:
-            return 999  # Unknown age
-        
+                created = tweet.get('created_at', '')
+                tweets.append({
+                    'account': account,
+                    'text': text,
+                    'created_at': created,
+                    'age_hours': self._age_hours(created),
+                    'priority': strategy['priority'],
+                })
+            time.sleep(0.5)   # be polite to the rate limiter
+
+        if tweets:
+            tweets.sort(key=lambda t: (self.PRIORITY_ORDER.get(t['priority'], 2), t['age_hours']))
+            return tweets
+        if errors:
+            return {'error': 'Failed to retrieve tweets', 'details': errors,
+                    'message': 'Check token and rate limits at developer.x.com'}
+        return {'message': 'No recent posts from the monitored accounts'}
+
+    @staticmethod
+    def _age_hours(created_at):
+        if not created_at:
+            return 999.0
         try:
-            from datetime import datetime
-            # Twitter returns ISO format: 2024-12-16T08:30:00.000Z
-            tweet_time = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
-            now = datetime.now(tweet_time.tzinfo)
-            age = now - tweet_time
-            return age.total_seconds() / 3600  # Convert to hours
-        except:
-            return 999
-    
-    def _sort_tweets_by_priority(self, tweets):
-        """Sort tweets by priority level and then by recency within each priority"""
-        priority_order = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3}
-        
-        # Sort by priority first, then by age (newest first within priority)
-        sorted_tweets = sorted(
-            tweets,
-            key=lambda t: (priority_order.get(t.get('priority', 'medium'), 2), t.get('age_hours', 999))
-        )
-        
-        return sorted_tweets
+            posted = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+        except ValueError:
+            return 999.0
+        return (datetime.now(timezone.utc) - posted).total_seconds() / 3600
 
 
 class EmergencyResourcesFetcher:
-    """Provides emergency preparedness resources and checklists"""
-    
+    """Static preparedness reference used by the console checker."""
+
     @staticmethod
     def get_emergency_resources():
-        """Get emergency preparedness information"""
         return {
             'emergency_contacts': {
                 '911': 'Fire, Medical, Police Emergency',
                 '311': 'Non-emergency city services',
-                'poison_control': '1-800-222-1222',
-                'disaster_distress': '1-800-985-5990',
-                'red_cross': '1-800-RED-CROSS (1-800-733-2767)'
+                '1-800-222-1222': 'Poison Control',
+                '1-800-985-5990': 'Disaster Distress Helpline',
+                '1-800-733-2767': 'American Red Cross',
             },
             'supply_checklist': [
                 'Water (1 gallon per person per day for 3 days)',
@@ -471,47 +285,6 @@ class EmergencyResourcesFetcher:
                 'Wrench or pliers (to turn off utilities)',
                 'Manual can opener',
                 'Local maps',
-                'Cell phone with chargers and backup battery'
+                'Cell phone with chargers and backup battery',
             ],
-            'important_documents': [
-                'Insurance policies',
-                'Identification documents',
-                'Bank account records',
-                'Credit card account numbers',
-                'Medical information',
-                'Copies stored in waterproof container'
-            ],
-            'family_plan': [
-                'Establish meeting places',
-                'Out-of-area emergency contact',
-                'Evacuation routes',
-                'Pet care plan',
-                'Special needs considerations'
-            ]
         }
-
-
-# Example usage and data priorities
-EMERGENCY_INFO_PRIORITIES = {
-    'critical': [
-        'NWS severe weather alerts',
-        'FEMA disaster declarations',
-        'USGS significant earthquakes (M5.0+)',
-        'Active fire incidents',
-        'Air quality emergencies (AQI > 200)'
-    ],
-    'important': [
-        'Power outage information',
-        'CDC outbreak notices',
-        'All NWS alerts',
-        'Earthquakes M4.0+',
-        'Emergency agency social media'
-    ],
-    'awareness': [
-        'Space weather impacts',
-        'HF radio conditions',
-        'General preparedness',
-        'Resource availability',
-        'Weather forecasts'
-    ]
-}

@@ -1,227 +1,126 @@
 #!/usr/bin/env python3
 """
-Standalone Emergency Information Checker
-Quick way to check current emergency conditions
+Console emergency check - prints current conditions without the GUI.
+
+    python emergency_checker.py        national view
+    python emergency_checker.py GA     NWS alerts filtered to one state
 """
 
 import sys
-import os
-
-# Add current directory to path so we can import the module
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from emergency_module import EmergencyDataFetcher, EmergencyResourcesFetcher
 from datetime import datetime
-import json
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from emergency_module import EmergencyDataFetcher, EmergencyResourcesFetcher  # noqa: E402
+from data_sources import PowerOutageFetcher  # noqa: E402
+
+SEVERITY_TAGS = {'Extreme': '[EXTREME]', 'Severe': '[SEVERE] ', 'Moderate': '[MODERATE]'}
 
 
-def print_section(title):
-    """Print a formatted section header"""
-    print("\n" + "=" * 70)
-    print(f"  {title}")
-    print("=" * 70)
+def section(title):
+    print(f"\n{'=' * 70}\n  {title}\n{'=' * 70}")
 
 
-def print_alerts(alerts):
-    """Print weather alerts"""
+def failed(items):
+    """True when a list-returning fetcher gave back an error record."""
+    return bool(items) and isinstance(items, list) and items[0].get('error')
+
+
+def show_alerts(alerts, limit=10):
+    if failed(alerts):
+        print(f"  Error: {alerts[0]['error']}")
+        return
     if not alerts:
         print("  No active alerts")
         return
-    
-    if isinstance(alerts, list) and len(alerts) > 0 and alerts[0].get('error'):
-        print(f"  Error: {alerts[0]['error']}")
-        return
-    
-    for alert in alerts[:10]:  # Limit to 10 most recent
-        if alert.get('error'):
-            print(f"  Error: {alert['error']}")
-            continue
-            
-        severity = alert.get('severity', 'Unknown')
-        event = alert.get('event', 'Unknown Event')
-        areas = alert.get('areas', 'Unknown Area')
-        headline = alert.get('headline', '')
-        
-        # Color code based on severity
-        if severity == 'Extreme':
-            prefix = "🔴 EXTREME"
-        elif severity == 'Severe':
-            prefix = "🟠 SEVERE"
-        elif severity == 'Moderate':
-            prefix = "🟡 MODERATE"
-        else:
-            prefix = "ℹ️  INFO"
-        
-        print(f"\n  {prefix}: {event}")
-        print(f"  Area: {areas}")
-        if headline:
-            print(f"  {headline}")
+    for a in alerts[:limit]:
+        tag = SEVERITY_TAGS.get(a.get('severity'), '[INFO]   ')
+        print(f"\n  {tag} {a.get('event', 'Unknown event')}")
+        print(f"  Area: {a.get('areas', 'Unknown')}")
+        if a.get('headline'):
+            print(f"  {a['headline']}")
 
 
-def print_earthquakes(quakes):
-    """Print recent earthquakes"""
-    if not quakes:
-        print("  No significant earthquakes in past 7 days")
-        return
-    
-    if isinstance(quakes, list) and len(quakes) > 0 and quakes[0].get('error'):
+def show_quakes(quakes, limit=10):
+    if failed(quakes):
         print(f"  Error: {quakes[0]['error']}")
         return
-    
-    for quake in quakes[:10]:
-        if quake.get('error'):
-            print(f"  Error: {quake['error']}")
-            continue
-            
-        mag = quake.get('magnitude', 'Unknown')
-        location = quake.get('location', 'Unknown Location')
-        time = quake.get('time', 'Unknown Time')
-        depth = quake.get('depth', 'Unknown')
-        
-        print(f"\n  M{mag} - {location}")
-        print(f"  Time: {time}")
-        print(f"  Depth: {depth} km")
-
-
-def print_disasters(disasters):
-    """Print FEMA disasters"""
-    if not disasters:
-        print("  No recent disaster declarations")
+    if not quakes:
+        print("  No M4.5+ earthquakes in the past 7 days")
         return
-    
-    if isinstance(disasters, list) and len(disasters) > 0 and disasters[0].get('error'):
+    for q in quakes[:limit]:
+        print(f"  M{q.get('magnitude')}  {q.get('location')}  ({q.get('time')}, {q.get('depth')} km)")
+
+
+def show_disasters(disasters, limit=10):
+    if failed(disasters):
         print(f"  Error: {disasters[0]['error']}")
         return
-    
-    for disaster in disasters[:10]:
-        if disaster.get('error'):
-            print(f"  Error: {disaster['error']}")
-            continue
-            
-        num = disaster.get('disaster_number', 'Unknown')
-        state = disaster.get('state', 'Unknown')
-        incident = disaster.get('incident_type', 'Unknown')
-        title = disaster.get('title', '')
-        date = disaster.get('date', 'Unknown')
-        
-        print(f"\n  {num} - {state}")
-        print(f"  Type: {incident}")
-        print(f"  {title}")
-        print(f"  Date: {date}")
-
-
-def print_fire_info(fire_data):
-    """Print fire information"""
-    if fire_data.get('error'):
-        print(f"  Error: {fire_data['error']}")
+    if not disasters:
+        print("  No declarations in the last 30 days")
         return
-    
-    if fire_data.get('active_fires_24h'):
-        print(f"\n  Active thermal anomalies: {fire_data['active_fires_24h']}")
-        print(f"  {fire_data.get('message', '')}")
-        print(f"  Source: {fire_data.get('source', 'Unknown')}")
-        print(f"  Note: {fire_data.get('note', '')}")
-    else:
-        print(f"  {fire_data.get('message', 'No data available')}")
+    for d in disasters[:limit]:
+        print(f"  {d.get('disaster_number')}  {d.get('state')}  {d.get('incident_type')}: "
+              f"{d.get('title')}  ({d.get('date')})")
 
 
-def print_resources(resources):
-    """Print emergency resources"""
-    contacts = resources.get('emergency_contacts', {})
-    
-    print("\n  EMERGENCY PHONE NUMBERS:")
-    for name, number in contacts.items():
-        print(f"    {number}: {contacts[name]}")
-    
-    print("\n  SUPPLY CHECKLIST (Top 10):")
-    for i, item in enumerate(resources.get('supply_checklist', [])[:10], 1):
-        print(f"    {i}. {item}")
+def show_fires(fires):
+    if fires.get('error'):
+        print(f"  Error: {fires['error']}")
+        return
+    print(f"  {fires.get('message', 'No data available')}")
+    for fire in fires.get('largest', []):
+        contained = fire.get('contained')
+        pct = f"{contained:.0f}% contained" if contained is not None else "containment n/a"
+        print(f"    {fire['name']:<28} {fire['state']:<3} {fire['acres']:>9,} ac  {pct}")
+
+
+def show_outages(outages):
+    if outages.get('error'):
+        print(f"  Error: {outages['error']}")
+        return
+    print(f"  {outages['national_summary']}")
+    for s in outages['states'][:10]:
+        print(f"    {s['state']:<4} {s['outages']:>8,}  ({s['utilities']} utilities)")
+
+
+def show_resources(resources):
+    print("\n  Emergency numbers:")
+    for number, purpose in resources['emergency_contacts'].items():
+        print(f"    {number:<16} {purpose}")
+    print("\n  Kit checklist:")
+    for i, item in enumerate(resources['supply_checklist'], 1):
+        print(f"    {i:>2}. {item}")
 
 
 def main():
-    """Main function to run emergency checks"""
-    print("\n" + "=" * 70)
-    print("  EMERGENCY INFORMATION CHECKER")
-    print("  " + datetime.now().strftime("%B %d, %Y at %I:%M %p"))
+    state = sys.argv[1].upper() if len(sys.argv) > 1 else None
+    print(f"\n{'=' * 70}\n  EMERGENCY INFORMATION CHECK  {datetime.now():%B %d, %Y %H:%M}")
+    if state:
+        print(f"  NWS alerts filtered to: {state}")
     print("=" * 70)
-    
-    # Check if user wants a specific state
-    user_state = None
-    if len(sys.argv) > 1:
-        user_state = sys.argv[1].upper()
-        print(f"\n  Filtering for state: {user_state}")
-    
-    print("\n  Fetching data from emergency sources...")
-    print("  (This may take 30-60 seconds)")
-    
-    # Initialize fetcher
+    print("  Fetching from NWS, USGS, FEMA, NIFC and ODIN (30-60 s)...")
+
     fetcher = EmergencyDataFetcher()
-    
-    # Fetch all data
-    print("\n  📡 Connecting to data sources...")
-    
     try:
-        # 1. Weather Alerts
-        print_section("🌪️  NATIONAL WEATHER SERVICE ALERTS")
-        print("  Fetching NWS alerts...")
-        alerts = fetcher.get_nws_alerts(user_state)
-        print_alerts(alerts)
-        
-        # 2. Earthquakes
-        print_section("🌍 RECENT EARTHQUAKES (M4.5+ Last 7 Days)")
-        print("  Fetching USGS data...")
-        quakes = fetcher.get_recent_earthquakes()
-        print_earthquakes(quakes)
-        
-        # 3. FEMA Disasters
-        print_section("🏛️  FEMA DISASTER DECLARATIONS (Last 30 Days)")
-        print("  Fetching FEMA data...")
-        disasters = fetcher.get_fema_disasters()
-        print_disasters(disasters)
-        
-        # 4. Wildfires
-        print_section("🔥 ACTIVE FIRE INCIDENTS (Last 24 Hours)")
-        print("  Fetching NASA FIRMS data...")
-        fires = fetcher.get_active_fires()
-        print_fire_info(fires)
-        
-        # 5. Air Quality
-        print_section("💨 AIR QUALITY INFORMATION")
-        air_quality = fetcher.get_air_quality_alerts()
-        print(f"  {air_quality.get('message', 'No data available')}")
-        if air_quality.get('url'):
-            print(f"  Check: {air_quality['url']}")
-        
-        # 6. Power Outages
-        print_section("⚡ POWER OUTAGE INFORMATION")
-        outages = fetcher.get_power_outage_summary()
-        print(f"  {outages.get('message', 'No data available')}")
-        if outages.get('resources'):
-            for resource in outages['resources']:
-                print(f"    • {resource}")
-        
-        # 7. Emergency Resources
-        print_section("📋 EMERGENCY PREPAREDNESS RESOURCES")
-        resources = EmergencyResourcesFetcher.get_emergency_resources()
-        print_resources(resources)
-        
-        # Summary
-        print_section("✅ DATA FETCH COMPLETE")
-        print(f"  Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print("  All available emergency data retrieved successfully.")
-        print("\n  💡 TIP: Run with state code for filtered alerts")
-        print("     Example: python emergency_checker.py CA")
-        print("     Example: python emergency_checker.py TX")
-        print("\n" + "=" * 70 + "\n")
-        
+        section("NATIONAL WEATHER SERVICE ALERTS")
+        show_alerts(fetcher.get_nws_alerts(state))
+        section("EARTHQUAKES  M4.5+ last 7 days")
+        show_quakes(fetcher.get_recent_earthquakes())
+        section("FEMA DISASTER DECLARATIONS  last 30 days")
+        show_disasters(fetcher.get_fema_disasters())
+        section("ACTIVE WILDFIRES  NIFC")
+        show_fires(fetcher.get_active_fires())
+        section("POWER OUTAGES  DOE / ORNL ODIN")
+        show_outages(PowerOutageFetcher().get_outages())
+        section("PREPAREDNESS REFERENCE")
+        show_resources(EmergencyResourcesFetcher.get_emergency_resources())
+        print(f"\n{'=' * 70}\n  Done {datetime.now():%H:%M:%S}. "
+              "Tip: pass a state code to filter alerts, e.g. python emergency_checker.py TX\n")
     except KeyboardInterrupt:
-        print("\n\n  ⚠️  Interrupted by user")
-        print("=" * 70 + "\n")
-        sys.exit(0)
-    except Exception as e:
-        print(f"\n\n  ❌ ERROR: {e}")
-        print("=" * 70 + "\n")
-        sys.exit(1)
+        print("\n  Interrupted.")
+        sys.exit(130)
 
 
 if __name__ == "__main__":

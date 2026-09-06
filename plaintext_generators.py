@@ -1,567 +1,295 @@
-# Plain Text Generators for Low-Bandwidth Radio Transmission
-# Optimized for ABSOLUTE MINIMUM file size
-
 """
-Plain text generators that create ultra-compact files suitable for 
-radio transmission over low-bandwidth links.
+Emcomm BBS - Plain-text bulletin formatters
 
-File size comparison:
-- PDF (compressed): 50 KB
-- HTML: 80 KB  
-- Plain Text: 5-8 KB (90% smaller!)
+Every bulletin is written as compact plain text so it can be moved over
+low-bandwidth links (VarAC, Winlink, packet). A typical set is 20-30 KB,
+roughly 95% smaller than the PDF equivalents this project started with.
+
+Lines are wrapped to WIDTH characters so they display cleanly in the
+80-column terminals most digital-mode clients use.
 """
 
+import textwrap
 from datetime import datetime
 
+WIDTH = 75
+RULE = "=" * 40
+
+
+def wrap(text, width=WIDTH, indent="", first_indent=None):
+    """Word-wrap ``text`` into a list of lines.
+
+    Whitespace runs are collapsed. Words longer than the width (URLs) are
+    kept intact on their own line rather than split mid-word.
+    """
+    text = " ".join(str(text or "").split())
+    if not text:
+        return []
+    return textwrap.wrap(
+        text, width=width,
+        initial_indent=indent if first_indent is None else first_indent,
+        subsequent_indent=indent,
+        break_long_words=False, break_on_hyphens=False,
+    )
+
+
+def _stamp():
+    return datetime.now().strftime("%m/%d %H:%M")
+
+
+def _write(filename, lines):
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines))
+        f.write('\n')
+
+
+def _has_data(items):
+    """True for a non-empty list whose first entry is not an error record."""
+    return bool(items) and isinstance(items, list) and not items[0].get('error')
+
+
+def _section(lines, title):
+    """Append a blank separator (unless one is already there) and a title."""
+    if lines and lines[-1] != "":
+        lines.append("")
+    lines.append(title)
+
+
+def _iso_short(value):
+    """'2026-09-06T14:00:00-04:00' -> '2026-09-06 14:00'."""
+    if not value or 'T' not in value:
+        return value or ''
+    date, _, rest = value.partition('T')
+    return f"{date} {rest[:5]}"
+
+
+# ---------------------------------------------------------------------------
 
 class PlainTextGenerator:
-    """Generates ultra-compact plain text reports for radio transmission"""
-    
+    """Namespace for the bulletin writers. Each writes one file and returns."""
+
     @staticmethod
-    def create_news_txt(filename, summary_text, news_data):
-        """Create minimal news text file"""
-        timestamp = datetime.now().strftime("%m/%d %H:%M")
-        
-        lines = []
-        lines.append(f"NEWS {timestamp}")
-        lines.append("=" * 40)
-        
-        # Summary (compact)
+    def create_news_txt(filename, summary_text, news_data, max_per_source=10):
+        lines = [f"NEWS {_stamp()}", RULE]
         if summary_text and summary_text.strip():
             lines.append("SUMMARY:")
-            lines.append(summary_text.strip())
+            for para in summary_text.strip().split('\n'):
+                lines.extend(wrap(para) or [""])
             lines.append("")
-        
-        # Headlines by source (very compact)
         for source, headlines in news_data.items():
             lines.append(f"{source}:")
-            for i, headline in enumerate(headlines[:10], 1):  # Limit to 10
-                lines.append(f"{i}. {headline}")
+            for i, headline in enumerate(headlines[:max_per_source], 1):
+                lines.extend(wrap(headline, first_indent=f"{i}. ", indent="   "))
             lines.append("")
-        
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(lines))
-    
+        _write(filename, lines)
+
     @staticmethod
-    def create_weather_txt(filename, region_number, forecasts, region_desc):
-        """Create minimal weather text file"""
-        timestamp = datetime.now().strftime("%m/%d %H:%M")
-        
-        lines = []
-        lines.append(f"WX R{region_number} {timestamp}")
-        lines.append(region_desc)
-        lines.append("=" * 40)
-        
+    def create_weather_txt(filename, region_number, forecasts, region_desc, periods=4):
+        """One block per city, next ``periods`` NWS periods (4 = two days)."""
+        lines = [f"WX R{region_number} {_stamp()}", region_desc, RULE]
         for forecast in forecasts:
-            city = forecast['city']
-            periods = forecast.get('forecast', [])[:4]  # Only next 2 days (4 periods)
-            
-            lines.append(city)
-            for period in periods:
-                name = period.get('name', '')[:3]  # "Today" -> "Tod"
+            lines.append(forecast['city'])
+            for period in forecast.get('forecast', [])[:periods]:
+                name = period.get('name', '')[:3]      # "Tonight" -> "Ton"
                 temp = period.get('temperature', '')
-                wx = period.get('shortForecast', '')
-                
-                # Ultra compact: "Tod 65F Sunny"
-                lines.append(f"{name} {temp}F {wx}")
+                lines.append(f"{name} {temp}F {period.get('shortForecast', '')}")
             lines.append("")
-        
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(lines))
-    
+        _write(filename, lines)
+
     @staticmethod
     def create_space_txt(filename, conditions):
-        """Create minimal space weather text file"""
-        timestamp = datetime.now().strftime("%m/%d %H:%M")
-        
-        lines = []
-        lines.append(f"SPACE {timestamp}")
-        lines.append("=" * 40)
-        
-        lines.append(f"SFI:{conditions.get('solar_flux', 'N/A')}")
-        lines.append(f"SSN:{conditions.get('sunspot_number', 'N/A')}")
-        lines.append(f"A:{conditions.get('a_index', 'N/A')}")
-        lines.append(f"K:{conditions.get('k_index', 'N/A')}")
-        lines.append("")
-        
-        # Band conditions
-        band_conditions = conditions.get('band_conditions', {})
-        if band_conditions:
+        lines = [
+            f"SPACE {_stamp()}", RULE,
+            f"SFI:{conditions.get('solar_flux', 'N/A')}",
+            f"SSN:{conditions.get('sunspot_number', 'N/A')}",
+            f"A:{conditions.get('a_index', 'N/A')}",
+            f"K:{conditions.get('k_index', 'N/A')}",
+            "",
+        ]
+        bands = conditions.get('band_conditions', {})
+        if bands:
             lines.append("BANDS:")
-            for band, cond in band_conditions.items():
-                lines.append(f"{band}: {cond}")
+            lines.extend(f"{band}: {cond}" for band, cond in bands.items())
         else:
             lines.append("BANDS: No data available")
-        
-        # Add forecast if available
+
         forecast = conditions.get('forecast', '')
         if forecast:
-            lines.append("")
-            lines.append("FORECAST:")
-            
-            # Process all forecast lines (no limit - we want the complete forecast!)
-            forecast_lines = forecast.split('\n')
-            
-            for line in forecast_lines:
-                line = line.strip()
-                if not line:
-                    continue
-                
-                # Word wrap long lines at ~75 characters
-                if len(line) <= 75:
-                    lines.append(line)
-                else:
-                    # Word wrap the line
-                    words = line.split()
-                    current_line = ""
-                    
-                    for word in words:
-                        if len(current_line) + len(word) + 1 <= 75:
-                            current_line += (word + " ")
-                        else:
-                            if current_line:
-                                lines.append(current_line.rstrip())
-                            current_line = word + " "
-                    
-                    if current_line:
-                        lines.append(current_line.rstrip())
-        
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(lines))
-    
+            lines += ["", "FORECAST:"]
+            for raw in forecast.split('\n'):
+                if raw.strip():
+                    lines.extend(wrap(raw))
+        _write(filename, lines)
+
     @staticmethod
-    def create_emergency_txt(filename, emergency_data):
-        """Create minimal emergency text file"""
-        timestamp = emergency_data.get('timestamp', datetime.now().strftime("%m/%d %H:%M"))
-        
-        lines = []
-        lines.append(f"EMRG {timestamp}")
-        lines.append("=" * 40)
-        
-        # NWS Alerts (show complete information)
+    def create_emergency_txt(filename, emergency_data, max_alerts=15,
+                             max_desc_lines=8, max_quakes=10, max_disasters=5):
+        timestamp = emergency_data.get('timestamp', _stamp())
+        lines = [f"EMRG {timestamp}", RULE]
+
         alerts = emergency_data.get('nws_alerts', [])
-        if alerts and not (isinstance(alerts, list) and len(alerts) > 0 and alerts[0].get('error')):
+        if _has_data(alerts):
             lines.append("ALERTS:")
-            alert_count = 0
-            for alert in alerts[:15]:  # Show up to 15 alerts (increased from 10)
-                event = alert.get('event', 'Unknown Event')
-                areas = alert.get('areas', 'Unknown Area')
-                severity = alert.get('severity', '')
-                headline = alert.get('headline', '')
-                description = alert.get('description', '')
-                effective = alert.get('effective', '')
-                expires = alert.get('expires', '')
-                
-                # Mark critical alerts with !
-                severity_marker = "!" if severity in ['Extreme', 'Severe'] else " "
-                
-                # Format: [!] Event - Areas
-                alert_header = f"{severity_marker} {event} - {areas}"
-                
-                # Word wrap the header if needed
-                if len(alert_header) <= 75:
-                    lines.append(alert_header)
-                else:
-                    # Word wrap long alert headers
-                    words = alert_header.split()
-                    current_line = ""
-                    for word in words:
-                        if len(current_line) + len(word) + 1 <= 75:
-                            current_line += (word + " ")
-                        else:
-                            if current_line:
-                                lines.append(current_line.rstrip())
-                            current_line = "  " + word + " "  # Indent continuation
-                    if current_line:
-                        lines.append(current_line.rstrip())
-                
-                # Add timing if available
-                if effective or expires:
-                    timing_parts = []
-                    if effective:
-                        # Extract just the date/time, not full ISO format
-                        try:
-                            eff_time = effective.split('T')[1][:5] if 'T' in effective else effective
-                            eff_date = effective.split('T')[0] if 'T' in effective else ''
-                            timing_parts.append(f"From {eff_date} {eff_time}")
-                        except:
-                            timing_parts.append(f"From {effective}")
-                    if expires:
-                        try:
-                            exp_time = expires.split('T')[1][:5] if 'T' in expires else expires
-                            exp_date = expires.split('T')[0] if 'T' in expires else ''
-                            timing_parts.append(f"Until {exp_date} {exp_time}")
-                        except:
-                            timing_parts.append(f"Until {expires}")
-                    
-                    if timing_parts:
-                        timing_line = "  " + " ".join(timing_parts)
-                        lines.append(timing_line)
-                
-                # Add headline if available (provides critical details)
-                if headline and headline != event:
-                    # Indent and word wrap the headline
-                    headline_words = headline.split()
-                    current_line = "  "
-                    for word in headline_words:
-                        if len(current_line) + len(word) + 1 <= 75:
-                            current_line += (word + " ")
-                        else:
-                            if len(current_line.strip()) > 0:
-                                lines.append(current_line.rstrip())
-                            current_line = "  " + word + " "
-                    if len(current_line.strip()) > 0:
-                        lines.append(current_line.rstrip())
-                
-                # Add description (the actual alert text - important for Special Weather Statements!)
-                if description:
-                    # Clean up the description - remove excessive whitespace
-                    description = ' '.join(description.split())
-                    
-                    # Word wrap the description
-                    desc_words = description.split()
-                    current_line = "  "
-                    line_count = 0
-                    max_desc_lines = 8  # Limit description to 8 lines to keep file size reasonable
-                    
-                    for word in desc_words:
-                        if line_count >= max_desc_lines:
-                            lines.append("  [...]")
-                            break
-                        
-                        if len(current_line) + len(word) + 1 <= 75:
-                            current_line += (word + " ")
-                        else:
-                            if len(current_line.strip()) > 0:
-                                lines.append(current_line.rstrip())
-                                line_count += 1
-                            current_line = "  " + word + " "
-                    
-                    if len(current_line.strip()) > 0 and line_count < max_desc_lines:
-                        lines.append(current_line.rstrip())
-                
-                lines.append("")  # Blank line between alerts
-                alert_count += 1
-            
-            if alert_count == 0:
-                lines.append("  None active")
-        
-        # Earthquakes (show complete information)
-        quakes = emergency_data.get('usgs_earthquakes', [])
-        if quakes and not (isinstance(quakes, list) and len(quakes) > 0 and quakes[0].get('error')):
-            lines.append("")
-            lines.append("QUAKES:")
-            for quake in quakes[:10]:  # Show up to 10 (increased from 5)
-                if not quake.get('error'):
-                    mag = quake.get('magnitude', '')
-                    loc = quake.get('location', '')
-                    time = quake.get('time', '')
-                    depth = quake.get('depth', '')
-                    
-                    # Format: M6.2 Location (Time, Depth)
-                    quake_line = f"M{mag} {loc}"
-                    if time or depth:
-                        details = []
-                        if time:
-                            details.append(time)
-                        if depth:
-                            details.append(f"{depth}km")
-                        quake_line += f" ({', '.join(details)})"
-                    
-                    # Word wrap if needed
-                    if len(quake_line) <= 75:
-                        lines.append(quake_line)
-                    else:
-                        words = quake_line.split()
-                        current_line = ""
-                        for word in words:
-                            if len(current_line) + len(word) + 1 <= 75:
-                                current_line += (word + " ")
-                            else:
-                                if current_line:
-                                    lines.append(current_line.rstrip())
-                                current_line = "  " + word + " "  # Indent continuation
-                        if current_line:
-                            lines.append(current_line.rstrip())
-        
-        # FEMA Disasters (show complete information)
-        disasters = emergency_data.get('fema_disasters', [])
-        if disasters and not (isinstance(disasters, list) and len(disasters) > 0 and disasters[0].get('error')):
-            lines.append("")
-            lines.append("FEMA:")
-            for disaster in disasters[:5]:  # Show up to 5
-                if not disaster.get('error'):
-                    num = disaster.get('disaster_number', '')
-                    state = disaster.get('state', '')
-                    inc = disaster.get('incident_type', '')
-                    title = disaster.get('title', '')
-                    date = disaster.get('date', '')
-                    
-                    # Format: DR-1234 ST Type: Title (Date)
-                    disaster_line = f"{num} {state} {inc}"
-                    if title:
-                        disaster_line += f": {title}"
-                    if date:
-                        disaster_line += f" ({date})"
-                    
-                    # Word wrap if needed
-                    if len(disaster_line) <= 75:
-                        lines.append(disaster_line)
-                    else:
-                        words = disaster_line.split()
-                        current_line = ""
-                        for word in words:
-                            if len(current_line) + len(word) + 1 <= 75:
-                                current_line += (word + " ")
-                            else:
-                                if current_line:
-                                    lines.append(current_line.rstrip())
-                                current_line = "  " + word + " "  # Indent continuation
-                        if current_line:
-                            lines.append(current_line.rstrip())
-        
-        # Fires (compact)
-        fires = emergency_data.get('fire_incidents', {})
-        if fires.get('active_fires_24h'):
-            lines.append("")
-            lines.append(f"FIRES: {fires['active_fires_24h']} active")
-        
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(lines))
-    
-    @staticmethod
-    def create_tweets_txt(filename, tweets):
-        """Create minimal tweets text file"""
-        timestamp = datetime.now().strftime("%m/%d %H:%M")
-        
-        lines = []
-        lines.append(f"TWEETS {timestamp}")
-        lines.append("=" * 40)
-        
-        if isinstance(tweets, dict) and tweets.get('error'):
-            lines.append(f"ERR: {tweets.get('error', 'Unknown')}")
-            if tweets.get('details'):
+            for alert in alerts[:max_alerts]:
+                marker = "!" if alert.get('severity') in ('Extreme', 'Severe') else " "
+                header = f"{alert.get('event', 'Unknown Event')} - {alert.get('areas', 'Unknown Area')}"
+                lines.extend(wrap(header, first_indent=f"{marker} ", indent="  "))
+
+                timing = []
+                if alert.get('effective'):
+                    timing.append(f"From {_iso_short(alert['effective'])}")
+                if alert.get('expires'):
+                    timing.append(f"Until {_iso_short(alert['expires'])}")
+                if timing:
+                    lines.append("  " + " ".join(timing))
+
+                headline = alert.get('headline')
+                if headline and headline != alert.get('event'):
+                    lines.extend(wrap(headline, indent="  "))
+
+                desc = wrap(alert.get('description', ''), indent="  ")
+                if len(desc) > max_desc_lines:
+                    desc = desc[:max_desc_lines] + ["  [...]"]
+                lines.extend(desc)
                 lines.append("")
-                lines.append("Details:")
-                for detail in tweets.get('details', [])[:3]:
-                    lines.append(f"  {detail}")
-        elif isinstance(tweets, dict) and tweets.get('message'):
+
+        quakes = emergency_data.get('usgs_earthquakes', [])
+        if _has_data(quakes):
+            _section(lines, "QUAKES:")
+            for q in quakes[:max_quakes]:
+                if q.get('error'):
+                    continue
+                details = [d for d in (q.get('time'), f"{q['depth']}km" if q.get('depth') else None) if d]
+                text = f"M{q.get('magnitude', '')} {q.get('location', '')}"
+                if details:
+                    text += f" ({', '.join(details)})"
+                lines.extend(wrap(text, indent="  ", first_indent=""))
+
+        disasters = emergency_data.get('fema_disasters', [])
+        if _has_data(disasters):
+            _section(lines, "FEMA:")
+            for d in disasters[:max_disasters]:
+                if d.get('error'):
+                    continue
+                text = f"{d.get('disaster_number', '')} {d.get('state', '')} {d.get('incident_type', '')}"
+                if d.get('title'):
+                    text += f": {d['title']}"
+                if d.get('date'):
+                    text += f" ({d['date']})"
+                lines.extend(wrap(text, indent="  ", first_indent=""))
+
+        fires = emergency_data.get('fire_incidents') or {}
+        if fires.get('active_fires'):
+            _section(lines, f"FIRES: {fires['active_fires']} active wildfire incidents (NIFC)")
+            for fire in fires.get('largest', []):
+                contained = fire.get('contained')
+                pct = f", {contained:.0f}% contained" if contained is not None else ""
+                lines.extend(wrap(f"{fire['name']} ({fire['state']}) {fire['acres']:,} ac{pct}",
+                                  indent="    ", first_indent="  "))
+
+        _write(filename, lines)
+
+    @staticmethod
+    def create_tweets_txt(filename, tweets, max_tweets=20):
+        lines = [f"TWEETS {_stamp()}", RULE]
+        if isinstance(tweets, dict) and tweets.get('error'):
+            lines.append(f"ERR: {tweets['error']}")
+            if tweets.get('details'):
+                lines += ["", "Details:"]
+                lines.extend(f"  {d}" for d in tweets['details'][:3])
+        elif isinstance(tweets, dict):
             lines.append(tweets.get('message', 'No tweets available'))
-        elif isinstance(tweets, list) and len(tweets) > 0:
-            lines.append(f"Total: {len(tweets)} tweets")
-            lines.append("")
-            for tweet in tweets[:20]:  # Show up to 20 tweets
-                acct = tweet.get('account', 'Unknown')
-                text = tweet.get('text', '')
-                
-                # Show full tweet text - no truncation
-                # Word wrap at ~75 chars for readability
-                lines.append(f"@{acct}:")
-                
-                if len(text) > 75:
-                    # Word wrap at ~75 chars
-                    words = text.split()
-                    current_line = "  "  # Start with indent
-                    
-                    for word in words:
-                        # Handle very long words (URLs, hashtags, etc.)
-                        if len(word) > 70:
-                            # If we have content, flush it first
-                            if len(current_line.strip()) > 0:
-                                lines.append(current_line.rstrip())
-                            # Put long word on its own line
-                            lines.append(f"  {word}")
-                            current_line = "  "
-                        elif len(current_line) + len(word) + 1 <= 75:
-                            current_line += (word + " ")
-                        else:
-                            # Line is full, flush it
-                            if len(current_line.strip()) > 0:
-                                lines.append(current_line.rstrip())
-                            current_line = "  " + word + " "
-                    
-                    # Flush any remaining text
-                    if len(current_line.strip()) > 0:
-                        lines.append(current_line.rstrip())
-                else:
-                    # Short tweet - single line
-                    lines.append(f"  {text}")
-                
-                lines.append("")  # Blank line after tweet
+        elif tweets:
+            lines += [f"Total: {len(tweets)} tweets", ""]
+            for tweet in tweets[:max_tweets]:
+                lines.append(f"@{tweet.get('account', 'Unknown')}:")
+                lines.extend(wrap(tweet.get('text', ''), indent="  "))
+                lines.append("")
         else:
             lines.append("No tweets available")
-        
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(lines))
-    
+        _write(filename, lines)
+
     @staticmethod
     def create_nextdoor_txt(filename, posts, zip_codes):
-        """
-        Create plain text file for Nextdoor community posts
-        Optimized for radio transmission with clear priority sections
-        """
-        timestamp = datetime.now()
-        lines = []
-        
-        # Header
-        lines.append(f"NEXTDOOR {timestamp.strftime('%m/%d %H:%M')}")
-        lines.append("=" * 75)
-        lines.append(f"MONITORING: {', '.join(zip_codes)}")
-        lines.append("=" * 75)
-        lines.append("")
-        
-        if isinstance(posts, list) and len(posts) > 0:
-            # Group posts by urgency
-            critical_posts = [p for p in posts if p.get('urgency') == 'critical']
-            high_posts = [p for p in posts if p.get('urgency') == 'high']
-            medium_posts = [p for p in posts if p.get('urgency') == 'medium']
-            low_posts = [p for p in posts if p.get('urgency') == 'low']
-            
-            # CRITICAL POSTS
-            if critical_posts:
-                lines.append("CRITICAL POSTS (Immediate Attention):")
+        rule = "=" * WIDTH
+        lines = [f"NEXTDOOR {_stamp()}", rule, f"MONITORING: {', '.join(zip_codes)}", rule, ""]
+
+        if not isinstance(posts, list) or not posts:
+            lines += ["No recent posts in monitored ZIP codes", ""]
+            _write(filename, lines)
+            return
+
+        sections = [
+            ('critical', "CRITICAL POSTS (Immediate Attention):", "! "),
+            ('high', "HIGH PRIORITY (Safety Concerns):", "* "),
+            ('medium', "MEDIUM PRIORITY (Community Updates):", "- "),
+            ('low', "LOW PRIORITY (Informational):", "  "),
+        ]
+        counts = {}
+        for urgency, title, bullet in sections:
+            group = [p for p in posts if p.get('urgency') == urgency]
+            counts[urgency] = len(group)
+            if not group:
+                continue
+            lines += [title, ""]
+            for post in group:
+                category = post.get('category', '').replace('_', ' ').title()
+                head = f"ZIP {post.get('zip_code', 'Unknown')} [{_age(post.get('age_hours', 0))}]"
+                lines.append(f"{head} - {category}:" if category else f"{head}:")
+                lines.extend(wrap(post.get('text', ''), width=WIDTH - 2,
+                                  first_indent=bullet, indent="  "))
                 lines.append("")
-                for post in critical_posts:
-                    zip_code = post.get('zip_code', 'Unknown')
-                    age = post.get('age_hours', 0)
-                    text = post.get('text', '')
-                    category = post.get('category', '').replace('_', ' ').title()
-                    
-                    # Format age
-                    if age < 1:
-                        age_str = f"{int(age * 60)}m ago"
-                    elif age < 24:
-                        age_str = f"{int(age)}h ago"
-                    else:
-                        age_str = f"{int(age/24)}d ago"
-                    
-                    lines.append(f"ZIP {zip_code} [{age_str}] - {category}:")
-                    
-                    # Word wrap the text at ~73 chars (with indent)
-                    words = text.split()
-                    current_line = "! "
-                    for word in words:
-                        if len(current_line) + len(word) + 1 <= 73:
-                            current_line += word + " "
-                        else:
-                            lines.append(current_line.rstrip())
-                            current_line = "  " + word + " "
-                    if current_line.strip():
-                        lines.append(current_line.rstrip())
-                    lines.append("")
-            
-            # HIGH PRIORITY POSTS
-            if high_posts:
-                lines.append("HIGH PRIORITY (Safety Concerns):")
-                lines.append("")
-                for post in high_posts:
-                    zip_code = post.get('zip_code', 'Unknown')
-                    age = post.get('age_hours', 0)
-                    text = post.get('text', '')
-                    category = post.get('category', '').replace('_', ' ').title()
-                    
-                    if age < 1:
-                        age_str = f"{int(age * 60)}m ago"
-                    elif age < 24:
-                        age_str = f"{int(age)}h ago"
-                    else:
-                        age_str = f"{int(age/24)}d ago"
-                    
-                    lines.append(f"ZIP {zip_code} [{age_str}] - {category}:")
-                    
-                    words = text.split()
-                    current_line = "⚠ "
-                    for word in words:
-                        if len(current_line) + len(word) + 1 <= 73:
-                            current_line += word + " "
-                        else:
-                            lines.append(current_line.rstrip())
-                            current_line = "  " + word + " "
-                    if current_line.strip():
-                        lines.append(current_line.rstrip())
-                    lines.append("")
-            
-            # MEDIUM PRIORITY POSTS
-            if medium_posts:
-                lines.append("MEDIUM PRIORITY (Community Updates):")
-                lines.append("")
-                for post in medium_posts:
-                    zip_code = post.get('zip_code', 'Unknown')
-                    age = post.get('age_hours', 0)
-                    text = post.get('text', '')
-                    category = post.get('category', '').replace('_', ' ').title()
-                    
-                    if age < 24:
-                        age_str = f"{int(age)}h ago"
-                    else:
-                        age_str = f"{int(age/24)}d ago"
-                    
-                    lines.append(f"ZIP {zip_code} [{age_str}] - {category}:")
-                    
-                    words = text.split()
-                    current_line = "• "
-                    for word in words:
-                        if len(current_line) + len(word) + 1 <= 73:
-                            current_line += word + " "
-                        else:
-                            lines.append(current_line.rstrip())
-                            current_line = "  " + word + " "
-                    if current_line.strip():
-                        lines.append(current_line.rstrip())
-                    lines.append("")
-            
-            # LOW PRIORITY POSTS (if any)
-            if low_posts:
-                lines.append("LOW PRIORITY (Informational):")
-                lines.append("")
-                for post in low_posts:
-                    zip_code = post.get('zip_code', 'Unknown')
-                    age = post.get('age_hours', 0)
-                    text = post.get('text', '')
-                    
-                    age_str = f"{int(age/24)}d ago" if age >= 24 else f"{int(age)}h ago"
-                    
-                    lines.append(f"ZIP {zip_code} [{age_str}]:")
-                    
-                    words = text.split()
-                    current_line = "  "
-                    for word in words:
-                        if len(current_line) + len(word) + 1 <= 73:
-                            current_line += word + " "
-                        else:
-                            lines.append(current_line.rstrip())
-                            current_line = "  " + word + " "
-                    if current_line.strip():
-                        lines.append(current_line.rstrip())
-                    lines.append("")
-            
-            # Summary statistics
-            lines.append("=" * 75)
-            lines.append(f"TOTAL POSTS: {len(posts)}")
-            lines.append(f"CRITICAL: {len(critical_posts)} | HIGH: {len(high_posts)} | " +
-                        f"MEDIUM: {len(medium_posts)} | LOW: {len(low_posts)}")
-            lines.append("=" * 75)
-        else:
-            lines.append("No recent posts in monitored ZIP codes")
+
+        lines += [
+            rule,
+            f"TOTAL POSTS: {len(posts)}",
+            f"CRITICAL: {counts['critical']} | HIGH: {counts['high']} | "
+            f"MEDIUM: {counts['medium']} | LOW: {counts['low']}",
+            rule,
+        ]
+        _write(filename, lines)
+
+    @staticmethod
+    def create_power_txt(filename, outage_data):
+        lines = [
+            f"POWER OUTAGE REPORT {outage_data.get('timestamp', '')}",
+            "Source: DOE/ORNL ODIN  odin.ornl.gov",
+            "=" * 42,
+        ]
+        if outage_data.get('error'):
+            lines += [f"Data unavailable: {outage_data['error']}",
+                      "Check poweroutage.us for current info"]
+            _write(filename, lines)
+            return
+
+        lines += [
+            f"TOTAL OUTAGES : {outage_data.get('total_outages', 0):,}",
+            f"UTILITIES     : {outage_data.get('utilities_with_outages', 0)} reporting / "
+            f"{outage_data.get('utility_count', 0)} monitored",
+            "",
+        ]
+        if outage_data.get('national_summary'):
+            lines.extend(wrap(outage_data['national_summary'], width=60))
             lines.append("")
-        
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(lines))
+
+        states = outage_data.get('states', [])
+        if states:
+            lines += ["OUTAGES BY STATE:", f"  {'ST':<6} {'OUTAGES':>8}  UTILS", "  " + "-" * 24]
+            lines.extend(f"  {s['state']:<6} {s['outages']:>8,}  {s['utilities']}" for s in states)
+            lines.append("")
+
+        top = outage_data.get('top_utilities', [])
+        if top:
+            lines += ["TOP UTILITIES:", f"  {'ST':<4} {'UTILITY':<32} {'OUTAGES':>8}", "  " + "-" * 46]
+            lines.extend(f"  {u['state']:<4} {u['name'][:31]:<32} {u['outages']:>8,}" for u in top)
+
+        lines += ["", "NOTE: ODIN covers participating utilities only.", "END POWER OUTAGE REPORT"]
+        _write(filename, lines)
 
 
-# Size estimation for radio transmission:
-#
-# News:      5-8 KB  (was 50 KB PDF) - 90% smaller
-# Weather:   2-4 KB per region (was 60 KB PDF) - 93% smaller  
-# Space:     0.5-1 KB (was 30 KB PDF) - 97% smaller
-# Emergency: 2-3 KB (was 40 KB PDF) - 93% smaller
-# Tweets:    2-4 KB (was 25 KB PDF) - 90% smaller
-#
-# TOTAL per set: ~20-30 KB (was 635 KB PDF)
-# COMPRESSION RATIO: 95% smaller!
-#
-# For radio transmission at 1200 baud (typical packet radio):
-# - PDF set (635 KB): ~70 minutes transmission time
-# - TXT set (25 KB): ~3 minutes transmission time
-# 
-# 23x faster transmission!
+def _age(hours):
+    if hours < 1:
+        return f"{int(hours * 60)}m ago"
+    if hours < 24:
+        return f"{int(hours)}h ago"
+    return f"{int(hours / 24)}d ago"

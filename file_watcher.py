@@ -5,8 +5,11 @@ Monitors directory for new welfare check-in files
 
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-from pathlib import Path
+import logging
 import time
+from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 
 class WelfareFileHandler(FileSystemEventHandler):
@@ -106,67 +109,16 @@ class WelfareFileWatcher:
         self.observer.schedule(self.handler, str(self.watch_dir), recursive=False)
         self.observer.start()
         
-        print(f"Started watching: {self.watch_dir}")
+        log.info("Started watching %s", self.watch_dir)
     
     def stop(self):
         """Stop watching for files"""
         if self.observer and self.observer.is_alive():
             self.observer.stop()
             self.observer.join(timeout=5)
-            print("Stopped file watcher")
+            log.info("Stopped file watcher")
     
     def is_running(self):
         """Check if watcher is running"""
-        return self.observer and self.observer.is_alive()
+        return bool(self.observer and self.observer.is_alive())
 
-
-if __name__ == '__main__':
-    # Test the file watcher
-    import tempfile
-    import shutil
-    
-    # Create temp directory
-    test_dir = Path(tempfile.mkdtemp())
-    print(f"Test directory: {test_dir}")
-    
-    # Define callback
-    def on_new_file(filepath):
-        print(f"New file detected: {filepath.name}")
-        print(f"  Size: {filepath.stat().st_size} bytes")
-        print(f"  Content preview:")
-        try:
-            with open(filepath, 'r') as f:
-                lines = f.readlines()[:5]
-                for line in lines:
-                    print(f"    {line.rstrip()}")
-        except Exception as e:
-            print(f"    Error reading: {e}")
-    
-    # Start watcher
-    watcher = WelfareFileWatcher(test_dir, on_new_file)
-    watcher.start()
-    
-    print("\nWatcher is running. Creating test files...")
-    print("Press Ctrl+C to stop\n")
-    
-    try:
-        # Create test files
-        for i in range(3):
-            time.sleep(2)
-            test_file = test_dir / f"test_welfare_{i}.txt"
-            test_file.write_text(f"CALLSIGN: KD8XX{i}\nNAME: Test User {i}\n")
-            print(f"Created: {test_file.name}")
-        
-        # Keep running
-        print("\nWaiting for more files... (Ctrl+C to stop)")
-        while True:
-            time.sleep(1)
-            
-    except KeyboardInterrupt:
-        print("\nStopping watcher...")
-        watcher.stop()
-        
-    finally:
-        # Cleanup
-        shutil.rmtree(test_dir)
-        print(f"Cleaned up test directory")

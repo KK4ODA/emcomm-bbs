@@ -3,9 +3,16 @@ Welfare Board - Output Generator Module
 Generates text, HTML, and CSV output files
 """
 
+import csv
+import html
+import textwrap
 from datetime import datetime
 from pathlib import Path
-import csv
+
+
+def esc(value):
+    """HTML-escape operator-supplied text (check-in fields)."""
+    return html.escape(str(value if value is not None else ''), quote=True)
 
 
 class OutputGenerator:
@@ -157,13 +164,10 @@ class OutputGenerator:
                     entry_lines = [header]
                     if msg_str:
                         for orig_line in msg_str.splitlines():
-                            orig_line = orig_line.strip()
-                            if not orig_line:
-                                continue
-                            while len(orig_line) > 54:
-                                entry_lines.append(f"        {orig_line[:54]}")
-                                orig_line = orig_line[54:]
-                            entry_lines.append(f"        {orig_line}")
+                            if orig_line.strip():
+                                entry_lines.extend(textwrap.wrap(
+                                    orig_line.strip(), width=62, initial_indent="        ",
+                                    subsequent_indent="        ", break_long_words=False))
                     return entry_lines
 
                 lines.extend(render_history_entry(current_time, current_status, current_message))
@@ -220,7 +224,7 @@ class OutputGenerator:
                 status_counts[status] = status_counts.get(status, 0) + 1
             
             # Generate HTML
-            html = f"""<!DOCTYPE html>
+            page = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -382,7 +386,7 @@ class OutputGenerator:
             </div>
             <div class="info-item">
                 <div class="info-label">Time Window:</div>
-                <div>{window_info['name']}</div>
+                <div>{esc(window_info['name'])}</div>
             </div>
             <div class="info-item">
                 <div class="info-label">Period:</div>
@@ -409,9 +413,9 @@ class OutputGenerator:
             
             for status, count in sorted(status_counts.items()):
                 status_class = 'safe' if status == 'SAFE' else ('assistance' if 'ASSISTANCE' in status else 'traffic')
-                html += f'                <div class="status-count status-{status_class}">{status}: {count}</div>\n'
+                page += f'                <div class="status-count status-{status_class}">{esc(status)}: {count}</div>\n'
             
-            html += """            </div>
+            page += """            </div>
         </div>
         
         <h2 style="color: #00aa00; margin-top: 30px;">Check-ins:</h2>
@@ -439,11 +443,11 @@ class OutputGenerator:
                 else:
                     display_id = f"[{name}]"
                 
-                html += f"""        <div class="checkin{update_class}">
+                page += f"""        <div class="checkin{update_class}">
             <div class="checkin-header">
                 <div>
                     <span style="color: #00aa00;">#{i}</span>
-                    <span class="callsign">{display_id}</span>
+                    <span class="callsign">{esc(display_id)}</span>
                     {update_badge}
                 </div>
                 <div class="received-time">{received_str}</div>
@@ -451,37 +455,37 @@ class OutputGenerator:
             
             <div class="checkin-field">
                 <span class="field-label">NAME:</span>
-                {name}
+                {esc(name)}
             </div>
             
             <div class="checkin-field">
                 <span class="field-label">LOCATION:</span>
-                {checkin.get('location', 'Unknown')}
+                {esc(checkin.get('location', 'Unknown'))}
             </div>
             
             <div class="checkin-field">
                 <span class="field-label">STATUS:</span>
-                <span class="status-indicator status-{status_class}">{status}</span>
+                <span class="status-indicator status-{status_class}">{esc(status)}</span>
 """
 
                 # Show status change if updated
                 if is_updated:
                     prev_status = checkin.get('previous_status', '')
                     if prev_status and prev_status != status:
-                        html += f"""                <div class="status-change">Previously: {prev_status}</div>
+                        page += f"""                <div class="status-change">Previously: {esc(prev_status)}</div>
 """
 
                 # Power field
                 power = checkin.get('power', '').upper() if checkin.get('power') else None
                 if power:
                     power_color = '#ff4444' if power == 'OFF' else ('#ffaa00' if power == 'GENERATOR' else '#00ff00')
-                    html += f"""            <div class="checkin-field">
+                    page += f"""            <div class="checkin-field">
                 <span class="field-label">POWER:</span>
                 <span style="color:{power_color}; font-weight:bold;">{power}</span>
             </div>
 """
 
-                html += """            </div>
+                page += """            </div>
 """
 
                 # Contact field (phone/email for family notification)
@@ -489,10 +493,10 @@ class OutputGenerator:
                 if contact:
                     # Determine if phone or email for display
                     if '@' in contact:
-                        contact_display = f'<a href="mailto:{contact}" style="color:#00ccff;">{contact}</a>'
+                        contact_display = f'<a href="mailto:{esc(contact)}" style="color:#00ccff;">{esc(contact)}</a>'
                     else:
-                        contact_display = f'<a href="sms:{contact}" style="color:#00ccff;">{contact}</a>'
-                    html += f"""            <div class="checkin-field">
+                        contact_display = f'<a href="sms:{esc(contact)}" style="color:#00ccff;">{esc(contact)}</a>'
+                    page += f"""            <div class="checkin-field">
                 <span class="field-label">CONTACT:</span>
                 {contact_display}
             </div>
@@ -500,16 +504,16 @@ class OutputGenerator:
 
                 message = checkin.get('message', '')
                 if message:
-                    html += f"""            
+                    page += f"""            
             <div class="message-box">
                 <strong>MESSAGE:</strong><br>
-                {message}
+                {esc(message).replace(chr(10), '<br>')}
             </div>
 """
 
-                html += "        </div>\n"
+                page += "        </div>\n"
             
-            html += f"""        
+            page += f"""        
         <div class="footer">
             <p>Generated by Amateur Radio Welfare Board System</p>
             <p>This page auto-refreshes every {refresh_seconds} seconds</p>
@@ -520,7 +524,7 @@ class OutputGenerator:
             
             # Write file
             with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(html)
+                f.write(page)
             
             return filepath
             
@@ -585,55 +589,3 @@ class OutputGenerator:
             print(f"Error generating CSV output: {e}")
             return None
 
-
-if __name__ == '__main__':
-    # Test the output generator
-    from datetime import datetime, date
-    
-    config = {
-        'output': {
-            'generate_text': True,
-            'generate_html': True,
-            'generate_csv': True,
-            'html_auto_refresh': 30
-        },
-        'directories': {
-            'output': 'test_output'
-        }
-    }
-    
-    generator = OutputGenerator(config)
-    
-    # Test data
-    window_info = {
-        'name': 'Evening Net',
-        'start': '19:00',
-        'end': '21:00',
-        'date': date.today(),
-        'key': f"{date.today()}_1900-2100"
-    }
-    
-    checkins = [
-        {
-            'callsign': 'KD8XXX',
-            'name': 'John Smith',
-            'location': 'Atlanta, GA',
-            'status': 'SAFE',
-            'message': 'All systems operational',
-            'received_time': datetime.now()
-        },
-        {
-            'callsign': 'W1ABC',
-            'name': 'Jane Doe',
-            'location': 'Boston, MA',
-            'status': 'SAFE',
-            'message': 'Everything OK here',
-            'received_time': datetime.now()
-        }
-    ]
-    
-    # Generate all outputs
-    generated = generator.generate_all(window_info, checkins)
-    print("Generated files:")
-    for format_type, filepath in generated.items():
-        print(f"  {format_type}: {filepath}")
