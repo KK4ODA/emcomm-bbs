@@ -37,12 +37,25 @@ app's Welfare Board. Each side simply skips the other when it is not running.
 
 ---
 
-## Quick start — Windows
+## Install — Windows
+
+Download **`Emcomm-BBS-Setup-<version>.exe`** from the
+[Releases page](https://github.com/KK4ODA/emcomm-bbs/releases) and run it.
+It installs per-user (no administrator prompt), adds a Start-menu entry and
+an optional desktop shortcut, and can start with Windows. No Python needed.
+Prefer no installer? Take **`Emcomm-BBS-<version>-windows-x64-portable.zip`**,
+unzip it anywhere and run `Emcomm BBS.exe`.
+
+Settings, the check-in template and the `data\` folders live in
+`%LOCALAPPDATA%\Emcomm BBS` and survive upgrades and uninstalls.
+
+Then tick the bulletins you want and click **Generate now**.
+
+## Run from source — Windows
 
 1. Install [Python 3.8+](https://www.python.org/downloads/) and tick **"Add Python to PATH"**.
 2. Download this repository (green **Code** button → **Download ZIP**) and extract it.
 3. Double-click **`RUN.bat`**. It installs anything missing and launches the app.
-4. Tick the bulletins you want and click **Generate now**.
 
 If VarAC is installed in `C:\VarAC`, the app reads its `VarAC.ini` and uses
 VarAC's own BBS folder for bulletins and its "Files in" folder for welfare
@@ -104,15 +117,18 @@ startup check off there.
 
 ![Update dialog showing release notes](docs/images/emcomm-bbs-update.png)
 
-Updating is one click. If you cloned the repository with git, it runs
-`git pull`; if you downloaded a ZIP, it fetches the release and copies the
-new files in. Either way:
+Updating is one click, whichever way you installed:
 
-- `emcomm_bbs_config.json` (your API keys), `settings.json` and `data/` are
-  left untouched.
-- Every file that gets replaced is kept in `.update-backup/` until the next
-  update, so you can roll back by copying it out again.
-- `requirements.txt` is reinstalled and the app restarts itself.
+- **Installer build:** the new installer is downloaded, its SHA-256 checked
+  against the release's `SHA256SUMS.txt`, the app closes, the installer runs
+  silently and the app reopens.
+- **Portable zip:** the new zip is downloaded and copied over the app folder
+  after the app closes, then the app reopens.
+- **Source (git clone):** `git pull`. **Source (ZIP):** the release is fetched
+  and the new files copied in; every replaced file is kept in
+  `.update-backup/` for rollback, and `requirements.txt` is reinstalled.
+
+Your settings, `settings.json` and `data/` are never touched.
 
 If the update cannot complete, the previous version stays in place and the
 error is shown. Releases can always be downloaded by hand from
@@ -210,8 +226,11 @@ welfare_checkin_template.txt   Template operators fill out
 examples/                      Sample check-in files
 docs/                          Full user guide
 
-RUN.bat                        Windows launcher
+RUN.bat                        Windows launcher (from source)
 run_unix.sh                    Linux / macOS launcher
+RELEASE.bat                    Tag and publish a release
+packaging/                     PyInstaller spec, Inno Setup script, icon
+.github/workflows/             CI tests and the installer build
 PUSH-TO-GITHUB.bat             Commit and push (see SYNCING.md)
 PULL-FROM-GITHUB.bat           Pull the latest from GitHub
 ```
@@ -222,7 +241,20 @@ PULL-FROM-GITHUB.bat           Pull the latest from GitHub
 python -m unittest discover -s tests -v
 ```
 
-The tests run offline; no API keys or network access are needed.
+The tests run offline; no API keys or network access are needed. Every push
+to `main` runs them on Windows and Linux (`.github/workflows/ci.yml`).
+
+**Releasing.** Add a `## [x.y.z]` section to `CHANGELOG.md`, then:
+
+```bat
+RELEASE.bat x.y.z
+```
+
+It sets `version.py`, runs the tests, commits, tags `vx.y.z`, pushes, and
+creates the GitHub release with the changelog section as notes. GitHub
+Actions (`release.yml`) then builds the Windows installer and portable zip
+with PyInstaller and Inno Setup (`packaging/`) and attaches them with
+checksums. Running copies pick the release up through their update check.
 
 ---
 

@@ -3,6 +3,32 @@
 All notable changes to Emcomm BBS are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] — 2026-09-06
+
+### Added
+
+- **Windows installer and portable build.** Every release now ships
+  `Emcomm-BBS-Setup-<version>.exe` (per-user install, no admin prompt,
+  Start-menu entry, optional desktop shortcut and start-with-Windows) and
+  `Emcomm-BBS-<version>-windows-x64-portable.zip`, built by GitHub Actions
+  with PyInstaller and Inno Setup, with `SHA256SUMS.txt`. Python is no
+  longer required to run the app.
+- Installed and portable copies update themselves too: the app downloads
+  the new installer (or zip), verifies its checksum, closes, applies the
+  update and reopens. Source installs keep the git / zip paths.
+- `RELEASE.bat x.y.z` cuts a release end to end; `.github/workflows/ci.yml`
+  runs the tests on every push.
+- An application icon.
+
+### Changed
+
+- In the installer and portable builds, settings, the check-in template and
+  the `data\` folders live in `%LOCALAPPDATA%\Emcomm BBS` so they survive
+  upgrades and uninstalls. Source installs keep everything beside the
+  scripts as before.
+- The activity log no longer scrolls past its last line when the window is
+  short.
+
 ## [1.6.0] — 2026-09-06
 
 ### Added

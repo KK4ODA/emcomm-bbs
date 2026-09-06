@@ -14,8 +14,35 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-APP_DIR = Path(__file__).resolve().parent
-CONFIG_FILE = APP_DIR / "emcomm_bbs_config.json"
+import os
+
+# Where things live. Running from source, everything sits next to the
+# scripts. In a PyInstaller build (the Windows installer / portable zip) the
+# bundled resources are read-only inside the app folder, so operator data
+# goes to %LOCALAPPDATA%\Emcomm BBS and survives upgrades and uninstalls.
+FROZEN = bool(getattr(sys, "frozen", False))
+APP_DIR = Path(__file__).resolve().parent                        # source tree, or _internal/ when frozen
+RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))           # bundled read-only files
+EXE_DIR = Path(sys.executable).resolve().parent if FROZEN else APP_DIR
+DATA_DIR = (Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "Emcomm BBS") if FROZEN else APP_DIR
+CONFIG_FILE = DATA_DIR / "emcomm_bbs_config.json"
+
+
+def template_path():
+    """The check-in template operators edit. Frozen builds copy the bundled
+    one into the data folder on first use so it can be opened and edited."""
+    if not FROZEN:
+        return APP_DIR / "welfare_checkin_template.txt"
+    target = DATA_DIR / "welfare_checkin_template.txt"
+    if not target.exists():
+        bundled = RESOURCE_DIR / "welfare_checkin_template.txt"
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if bundled.exists():
+                target.write_bytes(bundled.read_bytes())
+        except OSError:
+            pass
+    return target
 
 DEFAULT_TWITTER_HANDLES = "NWS,fema,USGS_Quakes,NWSAlerts,CDCgov,NHC_Atlantic"
 DEFAULT_TIME_WINDOWS = [{"name": "All Day", "start": "00:00", "end": "23:59"}]
@@ -102,7 +129,7 @@ def default_varac_dir(subfolder=""):
         except OSError:
             continue
     fallback = {"": "input", "welfare_archive": "archive", "welfare_error": "error"}
-    return str(APP_DIR / "data" / fallback.get(subfolder, "input"))
+    return str(DATA_DIR / "data" / fallback.get(subfolder, "input"))
 
 
 def _csv_list(value):
@@ -169,6 +196,7 @@ class AppConfig:
         return cfg
 
     def save(self, path=CONFIG_FILE):
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(asdict(self), f, indent=2)
 

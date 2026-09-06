@@ -2,17 +2,26 @@
 Emcomm BBS - Self-update
 
 Checks the GitHub Releases API for a newer tag than the running version and
-installs it in place:
+installs it in the way that fits how the app was installed:
 
-* if the app folder is a git clone and git is on PATH: ``git pull --ff-only``
-* otherwise: download the release zip, back up the files it replaces, and
-  copy the new files over the old ones
+    installed   Windows installer build (uninstaller beside the exe): download
+                Emcomm-BBS-Setup-<ver>.exe, verify size and SHA-256 against the
+                release's SHA256SUMS.txt, then hand over to a small batch helper
+                that waits for the app to exit, runs the installer silently and
+                starts the app again.
+    portable    portable zip build: download the new zip, unpack it, and let the
+                same kind of helper copy it over the app folder after exit.
+    git         source checkout with git on PATH: ``git pull --ff-only``
+    zip         plain source folder: download the source zip, back up the files
+                it replaces into .update-backup/, copy the new files in.
 
-Operator data is never touched: ``emcomm_bbs_config.json``, ``settings.json``,
-``data/`` and ``.git/`` are left alone. After a successful update
-``requirements.txt`` is reinstalled and the caller restarts the process.
+Operator data is never touched: the config file, ``settings.json``,
+``data/`` and ``.git/`` are left alone. For the source modes
+``requirements.txt`` is reinstalled and the caller restarts the process; for
+the frozen modes the helper does the restart.
 """
 
+import hashlib
 import io
 import logging
 import os
@@ -22,12 +31,13 @@ import subprocess
 import sys
 import tempfile
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 import requests
 
+from app_config import DATA_DIR, EXE_DIR, FROZEN
 from version import __version__
 
 log = logging.getLogger(__name__)
@@ -37,8 +47,9 @@ LATEST_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases"
 USER_AGENT = f"EmcommBBS/{__version__} (+https://github.com/{REPO})"
 TIMEOUT = 15
+APP_EXE_NAME = "Emcomm BBS.exe"
 
-# Never overwritten or deleted by an update.
+# Never overwritten or deleted by a source update.
 PRESERVE = {"emcomm_bbs_config.json", "settings.json", "data", ".git", ".update-backup",
             "__pycache__", "welfare_board.html"}
 BACKUP_DIR = ".update-backup"
@@ -55,8 +66,29 @@ class UpdateInfo:
     title: str
     notes: str            # release body (markdown)
     html_url: str
-    zip_url: str
+    zip_url: str          # source zipball
     published: str        # ISO date
+    assets: list = field(default_factory=list)   # [{'name', 'url', 'size'}]
+
+    def asset(self, *needles):
+        for a in self.assets:
+            name = a.get("name") or ""
+            if all(n.lower() in name.lower() for n in needles):
+                return a
+        return None
+
+    @property
+    def installer(self):
+        return self.asset("-Setup-", ".exe")
+
+    @property
+    def portable_zip(self):
+        return self.asset("windows-x64-portable", ".zip")
+
+    @property
+    def sums_url(self):
+        a = self.asset("SHA256SUMS")
+        return a["url"] if a else None
 
 
 def parse_version(text):
@@ -99,6 +131,8 @@ def check_for_update(current=__version__):
         html_url=data.get("html_url") or RELEASES_PAGE,
         zip_url=data.get("zipball_url") or f"https://github.com/{REPO}/archive/refs/tags/{tag}.zip",
         published=(data.get("published_at") or "")[:10],
+        assets=[{"name": a.get("name"), "url": a.get("browser_download_url"), "size": a.get("size")}
+                for a in data.get("assets") or [] if a.get("browser_download_url")],
     )
 
 
@@ -110,17 +144,41 @@ def _git_available():
     return shutil.which("git") is not None
 
 
+def install_kind(app_dir):
+    """'installed' | 'portable' (frozen builds), 'git' | 'zip' (source)."""
+    if FROZEN:
+        try:
+            has_uninstaller = any(p.name.lower().startswith("unins") and p.suffix.lower() == ".exe"
+                                  for p in EXE_DIR.iterdir())
+        except OSError:
+            has_uninstaller = False
+        return "installed" if has_uninstaller else "portable"
+    return "git" if (Path(app_dir) / ".git").is_dir() and _git_available() else "zip"
+
+
 def install_update(info, app_dir, log_callback=None, install_requirements=True):
-    """Install ``info`` into ``app_dir``. Returns 'git' or 'zip'.
+    """Install ``info``. Returns the method used: 'installer', 'portable',
+    'git' or 'zip'.
+
+    For 'installer' and 'portable' a helper batch file has been launched
+    that waits for this process to exit, applies the update and restarts
+    the app: the caller must exit promptly and must not relaunch itself.
+    For the source modes the caller restarts the process.
 
     Raises UpdateError with a readable message on failure; the previous
     files remain in place (git) or are restored from the backup (zip).
     """
     say = log_callback or (lambda m: log.info(m))
     app_dir = Path(app_dir)
+    kind = install_kind(app_dir)
+
+    if kind == "installed":
+        return _installer_update(info, say)
+    if kind == "portable":
+        return _portable_update(info, say)
 
     method = None
-    if (app_dir / ".git").is_dir() and _git_available():
+    if kind == "git":
         say("Updating with git pull…")
         try:
             _git_pull(app_dir, info.tag, say)
@@ -144,6 +202,116 @@ def install_update(info, app_dir, log_callback=None, install_requirements=True):
             say(f"⚠ Could not install requirements automatically: {exc}")
     return method
 
+
+# ---- frozen builds ---------------------------------------------------------
+
+def _download(asset, dest_dir, say, sums_url=None):
+    """Download a release asset, checking size and (when published) SHA-256."""
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    path = dest_dir / asset["name"]
+    digest = hashlib.sha256()
+    try:
+        with requests.get(asset["url"], stream=True, timeout=60,
+                          headers={"User-Agent": USER_AGENT}) as r:
+            r.raise_for_status()
+            with open(path, "wb") as f:
+                for chunk in r.iter_content(1 << 16):
+                    f.write(chunk)
+                    digest.update(chunk)
+    except (requests.RequestException, OSError) as exc:
+        raise UpdateError(f"download of {asset['name']} failed ({exc.__class__.__name__})") from exc
+
+    size = path.stat().st_size
+    if asset.get("size") and size != int(asset["size"]):
+        raise UpdateError(f"{asset['name']}: download size mismatch ({size:,} of {asset['size']:,} bytes)")
+    if sums_url:
+        try:
+            sums = requests.get(sums_url, timeout=TIMEOUT, headers={"User-Agent": USER_AGENT}).text
+        except requests.RequestException:
+            sums = ""
+        expected = next((line.split()[0] for line in sums.splitlines()
+                         if line.strip().endswith(asset["name"])), None)
+        if expected and expected.lower() != digest.hexdigest().lower():
+            path.unlink(missing_ok=True)
+            raise UpdateError(f"{asset['name']}: SHA-256 checksum mismatch, download discarded")
+        if expected:
+            say(f"  Checksum verified for {asset['name']}")
+    return path
+
+
+def _helper_script(pid, body_lines, exe):
+    """Batch helper: wait for this process to exit, do ``body_lines``, relaunch."""
+    return "\r\n".join([
+        "@echo off",
+        "title Emcomm BBS update",
+        "echo Waiting for Emcomm BBS to close...",
+        ":wait",
+        f'tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul && (timeout /t 1 /nobreak >nul & goto wait)',
+        *body_lines,
+        f'start "" "{exe}"',
+        '(goto) 2>nul & del "%~f0"',
+        "",
+    ])
+
+
+def _launch_helper(script_path, script_text):
+    with open(script_path, "w", encoding="ascii", errors="replace") as f:
+        f.write(script_text)
+    flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    subprocess.Popen(["cmd.exe", "/c", "start", "Emcomm BBS update", "/min", str(script_path)],  # noqa: S603,S607
+                     creationflags=flags, close_fds=True)
+
+
+def _installer_update(info, say):
+    asset = info.installer
+    if not asset:
+        raise UpdateError(f"release {info.tag} has no Windows installer; download it from {RELEASES_PAGE}")
+    updates = DATA_DIR / "updates"
+    say(f"Downloading {asset['name']}…")
+    path = _download(asset, updates, say, info.sums_url)
+    say("Installer downloaded. It runs as soon as the app closes.")
+    exe = Path(sys.executable)
+    _launch_helper(updates / "apply_update.cmd", _helper_script(os.getpid(), [
+        "echo Installing update...",
+        f'"{path}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /NOCANCEL',
+        "if errorlevel 1 (echo Installer reported error %errorlevel%. & pause & exit /b 1)",
+    ], exe))
+    return "installer"
+
+
+def _portable_update(info, say):
+    asset = info.portable_zip
+    if not asset:
+        raise UpdateError(f"release {info.tag} has no portable zip; download it from {RELEASES_PAGE}")
+    updates = DATA_DIR / "updates"
+    say(f"Downloading {asset['name']}…")
+    path = _download(asset, updates, say, info.sums_url)
+    stage = updates / f"portable-{info.version}"
+    shutil.rmtree(stage, ignore_errors=True)
+    try:
+        with zipfile.ZipFile(path) as z:
+            z.extractall(stage)
+    except (zipfile.BadZipFile, OSError) as exc:
+        raise UpdateError(f"could not unpack {asset['name']}: {exc}") from exc
+    # The zip may or may not wrap everything in one top-level folder.
+    src = stage
+    entries = [p for p in stage.iterdir()]
+    if len(entries) == 1 and entries[0].is_dir() and not (stage / APP_EXE_NAME).exists():
+        src = entries[0]
+    if not (src / APP_EXE_NAME).exists():
+        raise UpdateError("portable zip does not contain Emcomm BBS.exe")
+    say("New files unpacked. They are copied in as soon as the app closes.")
+    exe = Path(sys.executable)
+    _launch_helper(updates / "apply_update.cmd", _helper_script(os.getpid(), [
+        "echo Copying new files...",
+        f'robocopy "{src}" "{EXE_DIR}" /E /NFL /NDL /NJH /NJS /R:5 /W:2 >nul',
+        "if errorlevel 8 (echo Copy failed. & pause & exit /b 1)",
+        f'rmdir /s /q "{stage}" 2>nul',
+    ], exe))
+    return "portable"
+
+
+# ---- source checkouts ------------------------------------------------------
 
 def _git_pull(app_dir, tag, say):
     def run(*args):
@@ -233,19 +401,14 @@ def apply_tree(source, app_dir, say=None):
 
 
 def restart_app(script):
-    """Launch a fresh copy of ``script`` detached from this process."""
-    args = [sys.executable, str(script)]
+    """Launch a fresh copy of the app detached from this process (source modes)."""
+    args = [sys.executable] if FROZEN else [sys.executable, str(script)]
     kwargs = {"cwd": str(Path(script).parent), "close_fds": True}
     if sys.platform == "win32":
         kwargs["creationflags"] = 0x00000008 | 0x00000200   # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
     else:
         kwargs["start_new_session"] = True
     subprocess.Popen(args, **kwargs)  # noqa: S603
-
-
-def install_kind(app_dir):
-    """'git' when the folder is a clone with git available, else 'zip'."""
-    return "git" if (Path(app_dir) / ".git").is_dir() and _git_available() else "zip"
 
 
 if __name__ == "__main__":

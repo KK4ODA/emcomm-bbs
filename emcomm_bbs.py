@@ -30,7 +30,7 @@ from tkinter import ttk, filedialog, messagebox
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from app_config import AppConfig, APP_DIR, MAX_TIME_WINDOWS  # noqa: E402
+from app_config import AppConfig, APP_DIR, RESOURCE_DIR, MAX_TIME_WINDOWS, template_path  # noqa: E402
 from data_sources import (  # noqa: E402
     APP_VERSION, FEMA_REGIONS, FEMA_REGION_LABELS,
     WeatherFetcher, SpaceWeatherFetcher, NewsSummarizer, PowerOutageFetcher,
@@ -72,7 +72,6 @@ REPORTS = [
 ]
 REPORT_PREFIX = {key: prefix for key, _, _, prefix in REPORTS}
 TIME_RE = re.compile(r'^([01]\d|2[0-3]):[0-5]\d$')
-WELFARE_TEMPLATE = APP_DIR / "welfare_checkin_template.txt"
 DEFAULT_TEMPLATE_TEXT = """CALLSIGN: (or leave blank if not a licensed ham)
 
 NAME:
@@ -137,6 +136,12 @@ class EmcommApp:
     def _build_ui(self):
         p = ui_theme.apply_theme(self.root)
         self.root.title(f"Emcomm BBS {APP_VERSION}")
+        icon = RESOURCE_DIR / "packaging" / "emcomm_bbs.ico"
+        if icon.exists():
+            try:
+                self.root.iconbitmap(default=str(icon))
+            except tk.TclError:
+                pass
         # Fit the default size to the screen (laptops at 150% DPI are short)
         # and place the window near the top so the footer clears the taskbar.
         height = min(660, self.root.winfo_screenheight() - 150)
@@ -936,15 +941,17 @@ class EmcommApp:
                                 parent=self.root)
 
     def open_welfare_template(self):
-        if not WELFARE_TEMPLATE.exists():
-            WELFARE_TEMPLATE.write_text(DEFAULT_TEMPLATE_TEXT, encoding="utf-8")
+        template = template_path()
+        if not template.exists():
+            template.parent.mkdir(parents=True, exist_ok=True)
+            template.write_text(DEFAULT_TEMPLATE_TEXT, encoding="utf-8")
         try:
             if sys.platform == "win32":
-                os.startfile(WELFARE_TEMPLATE)  # noqa: S606
+                os.startfile(template)  # noqa: S606
             elif sys.platform == "darwin":
-                subprocess.call(["open", str(WELFARE_TEMPLATE)])
+                subprocess.call(["open", str(template)])
             else:
-                subprocess.call(["xdg-open", str(WELFARE_TEMPLATE)])
+                subprocess.call(["xdg-open", str(template)])
         except OSError as exc:
             self.welfare_log(f"⚠ Could not open template: {exc}")
 
@@ -1018,7 +1025,8 @@ class EmcommApp:
         body = ttk.Frame(win, padding=14)
         body.pack(fill="both", expand=True)
         ttk.Label(body, text=f"Emcomm BBS {info.version} is available", style="H2.TLabel").pack(anchor="w")
-        method = "git pull" if updater.install_kind(APP_DIR) == "git" else "download and replace files"
+        method = {"installed": "download the installer and run it", "portable": "download the portable zip",
+                  "git": "git pull"}.get(updater.install_kind(APP_DIR), "download and replace files")
         ttk.Label(body, text=f"You have {APP_VERSION}. Released {info.published or 'recently'}. "
                   f"Install method: {method}.", style="Muted.TLabel").pack(anchor="w", pady=(2, 10))
 
@@ -1094,8 +1102,8 @@ class EmcommApp:
             self.log(f"✗ Update failed: {exc}")
             self.ui(self._install_failed, str(exc))
             return
-        self.log(f"✓ Emcomm BBS {info.version} installed via {method}. Restarting…")
-        self.ui(self._install_done, info)
+        self.log(f"✓ Emcomm BBS {info.version} ready via {method}. Restarting…")
+        self.ui(self._install_done, info, method)
 
     def _install_failed(self, error):
         self._updating = False
@@ -1106,8 +1114,17 @@ class EmcommApp:
                              f"You can also download the release from\n{updater.RELEASES_PAGE}",
                              parent=self.root)
 
-    def _install_done(self, info):
+    def _install_done(self, info, method):
         self.set_status(f"Updated to {info.version}, restarting", "ok")
+        if method in ("installer", "portable"):
+            # A helper batch file is waiting for this process to exit; it
+            # applies the update and starts the new version.
+            messagebox.showinfo("Update ready",
+                                f"Emcomm BBS {info.version} is downloaded. The app will close, "
+                                "the update will be applied, and the app will reopen.",
+                                parent=self.root)
+            self._on_close()
+            return
         messagebox.showinfo("Update installed",
                             f"Emcomm BBS {info.version} is installed. The app will now restart.",
                             parent=self.root)

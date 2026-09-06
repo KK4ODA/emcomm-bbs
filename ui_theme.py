@@ -231,7 +231,7 @@ class LogPanel(tk.Frame):
         if lines > self.MAX_LINES:
             self.text.delete("1.0", f"{lines - self.MAX_LINES}.0")
         self.text.configure(state="disabled")
-        self.text.see("end")
+        self.text.see("end-1c")     # last real line, not the trailing newline
 
     def clear(self):
         self.text.configure(state="normal")

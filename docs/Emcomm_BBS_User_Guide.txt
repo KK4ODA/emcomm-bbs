@@ -73,8 +73,17 @@ to stations requesting content over the air.
 2. FIRST-TIME SETUP
 ================================================================
 
-Step 1. Launch the app by double-clicking RUN.bat (or running
-        python emcomm_bbs.py) in the application folder.
+Step 1. Install and launch the app. The easiest way is the
+        Windows installer: download Emcomm-BBS-Setup-<version>.exe
+        from github.com/KK4ODA/emcomm-bbs/releases and run it
+        (per-user, no administrator needed; Python is not
+        required). A portable zip is on the same page. Running
+        from source instead: double-click RUN.bat in the
+        application folder.
+
+        Installed and portable builds keep your settings, the
+        check-in template and the data\ folders in
+        %LOCALAPPDATA%\Emcomm BBS, so they survive upgrades.
 
 Step 2. Go to the Settings tab. You will configure your API
         keys, output folder, and welfare time windows here
@@ -763,10 +772,14 @@ Click "Update now" and confirm. The app then:
 
   1. Stops auto-updates and welfare monitoring if they are
      running (they must not write files mid-update).
-  2. Fetches the new version. If the app folder was cloned
-     with git and git is installed, this is a "git pull".
-     Otherwise the release ZIP is downloaded from GitHub and
-     its files are copied over the old ones.
+  2. Fetches the new version. Installer build: the new
+     installer is downloaded and its SHA-256 checksum verified
+     against the release's SHA256SUMS.txt; when the app closes
+     it runs silently and reopens the app. Portable zip: the
+     new zip is downloaded and copied over the app folder
+     after the app closes. Source folder cloned with git: a
+     "git pull". Any other source folder: the release ZIP is
+     downloaded and its files copied over the old ones.
   3. Copies every file it replaces into a folder named
      .update-backup inside the app folder (see 8d).
   4. Installs any new Python packages from requirements.txt.
