@@ -38,6 +38,7 @@ from data_sources import (  # noqa: E402
 from plaintext_generators import PlainTextGenerator  # noqa: E402
 import ui_theme  # noqa: E402
 from ui_theme import Card, LogPanel, ScrollFrame, StatusBar, field_row, FONTS, PALETTE  # noqa: E402
+import updater  # noqa: E402
 
 try:
     from emergency_module import EmergencyDataFetcher, SocialMediaEmergencyFetcher
@@ -123,6 +124,9 @@ class EmcommApp:
         if not WELFARE_AVAILABLE:
             self.log(f"⚠ Welfare Board disabled ({WELFARE_IMPORT_ERROR}). Run: pip install watchdog")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self._update_info = None
+        self._updating = False
+        self.root.after(1500, self._auto_update_check)
 
     # ------------------------------------------------------------------ UI
 
@@ -307,9 +311,29 @@ class EmcommApp:
                  bg=PALETTE["card"], fg=PALETTE["muted"], font=FONTS["small"]
                  ).grid(row=MAX_TIME_WINDOWS + 1, column=0, columnspan=4, sticky="w", pady=(6, 0))
 
+        # Updates --------------------------------------------------------------
+        upd = Card(body, "Updates", f"version {APP_VERSION}")
+        upd.grid(row=3, column=0, **pad)
+        f = upd.body
+        self.check_updates_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(f, text="Check for a new release when the app starts",
+                        variable=self.check_updates_var, style="Card.TCheckbutton",
+                        command=self._on_check_updates_toggled).grid(row=0, column=0, sticky="w")
+        row = tk.Frame(f, bg=PALETTE["card"])
+        row.grid(row=1, column=0, sticky="w", pady=(8, 0))
+        self.check_now_btn = ttk.Button(row, text="Check now", command=self.check_for_updates_now)
+        self.check_now_btn.pack(side="left")
+        self.update_status_label = tk.Label(row, text="", bg=PALETTE["card"], fg=PALETTE["muted"],
+                                            font=FONTS["small"])
+        self.update_status_label.pack(side="left", padx=12)
+        tk.Label(f, text=f"Releases are published at {updater.RELEASES_PAGE}. Updating keeps your "
+                 "settings and data; replaced files are kept in .update-backup/ until the next update.",
+                 bg=PALETTE["card"], fg=PALETTE["muted"], font=FONTS["small"], justify="left",
+                 wraplength=640).grid(row=2, column=0, sticky="w", pady=(8, 0))
+
         # Save ---------------------------------------------------------------
         foot = ttk.Frame(body)
-        foot.grid(row=3, column=0, sticky="ew", pady=14)
+        foot.grid(row=4, column=0, sticky="ew", pady=14)
         ttk.Button(foot, text="Save settings", style="Accent.TButton",
                    command=self.save_settings).pack(side="left")
         ttk.Label(foot, text="Stored in emcomm_bbs_config.json next to the app. "
@@ -404,7 +428,10 @@ class EmcommApp:
 
     def _tick_clock(self):
         service = "auto-updates on" if self._scheduler and self._scheduler.is_alive() else "auto-updates off"
-        self.header_right.configure(text=f"{service}   {datetime.now():%a %H:%M}")
+        text = f"{service}   {datetime.now():%a %H:%M}"
+        if getattr(self, "_update_info", None):
+            text = f"Update {self._update_info.version} available   " + text
+        self.header_right.configure(text=text)
         self.status_bar.set(right=f"Output: {self.config.save_directory}")
         self.root.after(15000, self._tick_clock)
 
@@ -429,6 +456,9 @@ class EmcommApp:
         if hasattr(self, "welfare_dir_vars"):
             for key, var in self.welfare_dir_vars.items():
                 var.set(getattr(c, key))
+        self.check_updates_var.set(c.check_updates)
+        if c.last_update_check:
+            self.update_status_label.configure(text=f"Last checked {c.last_update_check}")
 
     def _collect_settings(self):
         """Read widgets into self.config. Returns an error string or None."""
@@ -468,6 +498,7 @@ class EmcommApp:
 
         c.checkboxes = {k: v.get() for k, v in self.report_vars.items()}
         c.weather_regions = [i for i, v in self.region_vars.items() if v.get()]
+        c.check_updates = self.check_updates_var.get()
         return None
 
     def save_settings(self):
@@ -850,6 +881,176 @@ class EmcommApp:
         except OSError as exc:
             self.welfare_log(f"⚠ Could not open template: {exc}")
 
+    # -------------------------------------------------------------- updates
+
+    def _on_check_updates_toggled(self):
+        self.config.check_updates = self.check_updates_var.get()
+        try:
+            self.config.save()
+        except OSError as exc:
+            self.log(f"⚠ Could not save settings: {exc}")
+
+    def _auto_update_check(self):
+        """Startup check: at most once per day, silent unless a release is found."""
+        today = datetime.now().strftime("%Y-%m-%d")
+        if not self.config.check_updates or self.config.last_update_check == today:
+            return
+        self._start_update_check(manual=False)
+
+    def check_for_updates_now(self):
+        self._start_update_check(manual=True)
+
+    def _start_update_check(self, manual):
+        self.check_now_btn.configure(state="disabled")
+        self.update_status_label.configure(text="Checking…")
+        threading.Thread(target=self._update_check_worker, args=(manual,), daemon=True).start()
+
+    def _update_check_worker(self, manual):
+        try:
+            info = updater.check_for_update(APP_VERSION)
+            error = None
+        except updater.UpdateError as exc:
+            info, error = None, str(exc)
+        self.ui(self._update_check_done, info, error, manual)
+
+    def _update_check_done(self, info, error, manual):
+        self.check_now_btn.configure(state="normal")
+        today = datetime.now().strftime("%Y-%m-%d")
+        if error:
+            self.update_status_label.configure(text=f"Check failed: {error}")
+            self.log(f"⚠ Update check failed: {error}")
+            return
+        self.config.last_update_check = today
+        try:
+            self.config.save()
+        except OSError:
+            pass
+        if info is None:
+            self.update_status_label.configure(text=f"Up to date ({APP_VERSION}), checked {today}")
+            if manual:
+                self.log(f"✓ Emcomm BBS {APP_VERSION} is the latest release")
+            return
+        self._update_info = info
+        self._tick_clock()
+        self.update_status_label.configure(text=f"Version {info.version} is available")
+        self.log(f"⚠ Update available: Emcomm BBS {info.version} (you have {APP_VERSION})")
+        if manual or info.version != self.config.skipped_version:
+            self._show_update_dialog(info)
+
+    def _show_update_dialog(self, info):
+        win = tk.Toplevel(self.root)
+        win.title("Update available")
+        win.configure(bg=PALETTE["bg"])
+        win.transient(self.root)
+        x = self.root.winfo_rootx() + max(0, (self.root.winfo_width() - 560) // 2)
+        y = self.root.winfo_rooty() + max(0, (self.root.winfo_height() - 460) // 2)
+        win.geometry(f"560x460+{x}+{y}")
+        win.lift()
+        win.focus_force()
+
+        body = ttk.Frame(win, padding=14)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text=f"Emcomm BBS {info.version} is available", style="H2.TLabel").pack(anchor="w")
+        method = "git pull" if updater.install_kind(APP_DIR) == "git" else "download and replace files"
+        ttk.Label(body, text=f"You have {APP_VERSION}. Released {info.published or 'recently'}. "
+                  f"Install method: {method}.", style="Muted.TLabel").pack(anchor="w", pady=(2, 10))
+
+        notes = Card(body, "What's new", padding=10)
+        notes.pack(fill="both", expand=True)
+        text = tk.Text(notes.body, wrap="word", bg=PALETTE["card"], fg=PALETTE["text"], bd=0,
+                       font=FONTS["base"], padx=4, pady=4, height=12)
+        scroll = ttk.Scrollbar(notes.body, orient="vertical", command=text.yview)
+        text.configure(yscrollcommand=scroll.set)
+        text.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        text.insert("1.0", _plain_notes(info.notes) or "No release notes were provided.")
+        text.configure(state="disabled")
+
+        foot = ttk.Frame(body)
+        foot.pack(fill="x", pady=(12, 0))
+
+        def later():
+            win.destroy()
+
+        def skip():
+            self.config.skipped_version = info.version
+            try:
+                self.config.save()
+            except OSError:
+                pass
+            self.log(f"Skipping version {info.version}; use Check now in Settings to revisit")
+            win.destroy()
+
+        def update():
+            win.destroy()
+            self.install_update(info)
+
+        ttk.Button(foot, text="Update now", style="Accent.TButton", command=update).pack(side="left")
+        ttk.Button(foot, text="Remind me later", command=later).pack(side="left", padx=(6, 0))
+        ttk.Button(foot, text="Skip this version", command=skip).pack(side="left", padx=(6, 0))
+        ttk.Button(foot, text="View on GitHub", style="Link.TButton",
+                   command=lambda: webbrowser.open(info.html_url)).pack(side="right")
+        win.protocol("WM_DELETE_WINDOW", later)
+
+    def install_update(self, info):
+        if self._updating:
+            return
+        busy = []
+        if self._scheduler and self._scheduler.is_alive():
+            busy.append("auto-updates")
+        if self.welfare and self.welfare.running:
+            busy.append("welfare monitoring")
+        prompt = (f"Install Emcomm BBS {info.version} now?\n\n"
+                  "Your settings and data folders are kept. The app restarts when the update finishes.")
+        if busy:
+            prompt += "\n\n" + " and ".join(busy).capitalize() + " will be stopped first."
+        if not messagebox.askyesno("Update", prompt, parent=self.root):
+            return
+        if self._scheduler and self._scheduler.is_alive():
+            self.stop_service()
+        if self.welfare and self.welfare.running:
+            self.stop_welfare_monitoring()
+
+        self._updating = True
+        self.generate_btn.configure(state="disabled")
+        self.start_btn.configure(state="disabled")
+        self.set_status(f"Updating to {info.version}…", "warn")
+        self.notebook.select(self.main_tab)
+        threading.Thread(target=self._install_worker, args=(info,), daemon=True).start()
+
+    def _install_worker(self, info):
+        self.log("=" * 12 + f" Updating to {info.version} " + "=" * 12)
+        try:
+            with self._gen_lock:                     # never overwrite files mid-generation
+                method = updater.install_update(info, APP_DIR, self.log)
+        except updater.UpdateError as exc:
+            self.log(f"✗ Update failed: {exc}")
+            self.ui(self._install_failed, str(exc))
+            return
+        self.log(f"✓ Emcomm BBS {info.version} installed via {method}. Restarting…")
+        self.ui(self._install_done, info)
+
+    def _install_failed(self, error):
+        self._updating = False
+        self.generate_btn.configure(state="normal")
+        self.start_btn.configure(state="normal")
+        self.set_status("Update failed", "err")
+        messagebox.showerror("Update failed", f"{error}\n\nThe current version is still installed. "
+                             f"You can also download the release from\n{updater.RELEASES_PAGE}",
+                             parent=self.root)
+
+    def _install_done(self, info):
+        self.set_status(f"Updated to {info.version}, restarting", "ok")
+        messagebox.showinfo("Update installed",
+                            f"Emcomm BBS {info.version} is installed. The app will now restart.",
+                            parent=self.root)
+        try:
+            updater.restart_app(Path(__file__).resolve())
+        except OSError as exc:
+            messagebox.showerror("Restart", f"Could not relaunch automatically: {exc}\n"
+                                 "Start Emcomm BBS again by hand.", parent=self.root)
+        self._on_close()
+
     # ----------------------------------------------------------------- exit
 
     def _on_close(self):
@@ -857,6 +1058,20 @@ class EmcommApp:
         if self.welfare:
             self.welfare.stop()
         self.root.destroy()
+
+
+def _plain_notes(markdown):
+    """Release notes are markdown; show them as readable plain text."""
+    lines = []
+    for line in (markdown or "").splitlines():
+        line = re.sub(r"^#{1,6}\s*", "", line)            # headings
+        line = re.sub(r"\*\*(.+?)\*\*", r"\1", line)      # bold
+        line = re.sub(r"(?<!\*)\*(?!\*)(.+?)\*", r"\1", line)  # italics
+        line = line.replace("`", "")
+        line = re.sub(r"^\s*[-*]\s+", "• ", line)          # bullets
+        line = re.sub(r"^>\s?", "", line)                  # quotes
+        lines.append(line)
+    return "\n".join(lines).strip()
 
 
 def main():

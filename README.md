@@ -85,6 +85,32 @@ nextdoor_MMDD_HHMM.txt        welfare_board.html / welfare_DATE_WINDOW.txt / .cs
 
 ---
 
+## Updating
+
+The app checks for a new release when it starts (at most once a day) and
+tells you in the header and the activity log when one exists. A dialog shows
+the release notes with **Update now**, **Remind me later** and **Skip this
+version**. You can also use **Check now** on the Settings tab, or turn the
+startup check off there.
+
+![Update dialog showing release notes](docs/images/emcomm-bbs-update.png)
+
+Updating is one click. If you cloned the repository with git, it runs
+`git pull`; if you downloaded a ZIP, it fetches the release and copies the
+new files in. Either way:
+
+- `emcomm_bbs_config.json` (your API keys), `settings.json` and `data/` are
+  left untouched.
+- Every file that gets replaced is kept in `.update-backup/` until the next
+  update, so you can roll back by copying it out again.
+- `requirements.txt` is reinstalled and the app restarts itself.
+
+If the update cannot complete, the previous version stays in place and the
+error is shown. Releases can always be downloaded by hand from
+[the releases page](https://github.com/KK4ODA/emcomm-bbs/releases).
+
+---
+
 ## Configuration
 
 On first save the app writes **`emcomm_bbs_config.json`** next to the script.

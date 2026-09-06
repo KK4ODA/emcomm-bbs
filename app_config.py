@@ -81,6 +81,9 @@ class AppConfig:
     welfare_monitor_dir: str = field(default_factory=default_varac_dir)
     welfare_archive_dir: str = field(default_factory=lambda: default_varac_dir("welfare_archive"))
     welfare_error_dir: str = field(default_factory=lambda: default_varac_dir("welfare_error"))
+    check_updates: bool = True          # look for a new GitHub release at startup
+    skipped_version: str = ""           # release the operator chose to ignore
+    last_update_check: str = ""         # YYYY-MM-DD of the last automatic check
 
     # ------------------------------------------------------------------ I/O
 
@@ -113,6 +116,8 @@ class AppConfig:
                     setattr(cfg, key, max(1, int(value)))
                 except (TypeError, ValueError):
                     pass
+            elif key == "check_updates":
+                cfg.check_updates = bool(value)
             else:
                 setattr(cfg, key, value)
         return cfg

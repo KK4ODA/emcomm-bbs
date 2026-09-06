@@ -16,9 +16,11 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 
+from version import __version__
+
 log = logging.getLogger(__name__)
 
-USER_AGENT = "EmcommBBS/1.4 (+https://github.com/KK4ODA/emcomm-bbs)"
+USER_AGENT = f"EmcommBBS/{__version__} (+https://github.com/KK4ODA/emcomm-bbs)"
 TIMEOUT = 15
 
 

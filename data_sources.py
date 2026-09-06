@@ -21,9 +21,9 @@ from datetime import datetime
 
 import requests
 
-log = logging.getLogger(__name__)
+from version import __version__ as APP_VERSION
 
-APP_VERSION = "1.4.0"
+log = logging.getLogger(__name__)
 
 # NWS requires a descriptive User-Agent with a contact point.
 USER_AGENT = f"EmcommBBS/{APP_VERSION} (+https://github.com/KK4ODA/emcomm-bbs)"

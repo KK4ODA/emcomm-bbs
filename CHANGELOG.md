@@ -3,6 +3,26 @@
 All notable changes to Emcomm BBS are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] — 2026-09-06
+
+### Added
+
+- **Automatic update check.** On startup (at most once a day) the app asks
+  the GitHub Releases API whether a newer version exists. If so, the header
+  shows an "Update x.y.z available" badge and a dialog presents the release
+  notes with *Update now*, *Remind me later* and *Skip this version*. A
+  *Check now* button and an on/off switch live in Settings → Updates.
+- **One-click update.** When the app folder is a git clone and git is on
+  PATH the update is a `git pull --ff-only`; otherwise the release zip is
+  downloaded and copied over the installation. `emcomm_bbs_config.json`,
+  `settings.json` and `data/` are never touched, every replaced file is kept
+  in `.update-backup/`, `requirements.txt` is reinstalled, and the app
+  restarts itself. If anything fails the previous files are restored and the
+  running version keeps working.
+- `python updater.py` prints whether a newer release exists, for scripts.
+- The standalone Welfare Board logs a notice when a newer release exists.
+- `version.py` is now the single place the version number lives.
+
 ## [1.4.0] — 2026-09-06
 
 A cleanup release: same bulletins, same file names, much less code, and a

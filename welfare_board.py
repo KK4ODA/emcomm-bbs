@@ -12,6 +12,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import webbrowser
 from pathlib import Path
 import tkinter as tk
@@ -20,7 +21,9 @@ from tkinter import ttk, filedialog, messagebox
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import ui_theme  # noqa: E402
+import updater  # noqa: E402
 from ui_theme import Card, LogPanel, StatusBar, FONTS, PALETTE  # noqa: E402
+from version import __version__  # noqa: E402
 from welfare_pipeline import WelfarePipeline  # noqa: E402
 
 APP_DIR = Path(__file__).resolve().parent
@@ -81,6 +84,7 @@ class WelfareBoardApp:
         self.log("Welfare Board ready")
         self.log(f"Monitor folder: {self.settings['directories']['input']}")
         self._tick()
+        threading.Thread(target=self._update_notice, daemon=True).start()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ------------------------------------------------------------------ UI
@@ -134,6 +138,17 @@ class WelfareBoardApp:
 
     def log(self, message):
         self.log_panel.append(message)
+
+    def _update_notice(self):
+        """Mention a newer release; installing is done from the main app."""
+        try:
+            info = updater.check_for_update()
+        except updater.UpdateError:
+            return
+        if info:
+            self.log(f"⚠ Emcomm BBS {info.version} is available (you have {__version__}). "
+                     "Update from the main app's Settings tab, or see "
+                     f"{updater.RELEASES_PAGE}")
 
     def _tick(self):
         window = self.pipeline.current_window()

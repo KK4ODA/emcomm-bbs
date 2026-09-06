@@ -18,6 +18,7 @@ dist/
 
 # Runtime data directories (created automatically on first run)
 data/
+.update-backup/
 logs/
 *.log
 

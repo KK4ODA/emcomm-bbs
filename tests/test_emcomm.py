@@ -21,6 +21,7 @@ from output_generator import OutputGenerator  # noqa: E402
 from plaintext_generators import PlainTextGenerator, wrap  # noqa: E402
 from validator import WelfareValidator  # noqa: E402
 from welfare_parser import WelfareParser  # noqa: E402
+import updater  # noqa: E402
 
 WELFARE_CONFIG = {
     'time_windows': [{'name': 'All Day', 'start': '00:00', 'end': '23:59'}],
@@ -182,6 +183,77 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(loaded.main_interval_hours, 6)
             self.assertFalse(loaded.checkboxes['space'])
             self.assertNotIn('bogus', loaded.checkboxes)
+
+
+class UpdaterTests(unittest.TestCase):
+
+    def test_version_compare(self):
+        self.assertEqual(updater.parse_version("v1.4.0"), (1, 4, 0))
+        self.assertTrue(updater.is_newer("v1.5.0", "1.4.0"))
+        self.assertTrue(updater.is_newer("2.0", "1.99.9"))
+        self.assertFalse(updater.is_newer("v1.4.0", "1.4.0"))
+        self.assertFalse(updater.is_newer("1.4.0-beta", "1.4.0"))
+        self.assertFalse(updater.is_newer("", "1.4.0"))
+
+    def test_apply_tree_preserves_user_data_and_backs_up(self):
+        with tempfile.TemporaryDirectory() as d:
+            app = Path(d) / "app"
+            new = Path(d) / "new"
+            (app / "data" / "input").mkdir(parents=True)
+            (app / "data" / "input" / "checkin.txt").write_text("keep")
+            (app / "emcomm_bbs_config.json").write_text('{"anthropic_api_key": "secret"}')
+            (app / "emcomm_bbs.py").write_text("old code")
+            (app / "docs").mkdir()
+            (app / "docs" / "guide.txt").write_text("old guide")
+            new.mkdir()
+            (new / "emcomm_bbs.py").write_text("new code")
+            (new / "newmodule.py").write_text("brand new")
+            (new / "emcomm_bbs_config.json").write_text("{}")          # must NOT overwrite
+            (new / "data").mkdir()
+            (new / "data" / "README").write_text("x")                  # must NOT be copied
+            (new / "docs").mkdir()
+            (new / "docs" / "guide.txt").write_text("new guide")
+
+            copied = updater.apply_tree(new, app)
+
+            self.assertEqual((app / "emcomm_bbs.py").read_text(), "new code")
+            self.assertEqual((app / "newmodule.py").read_text(), "brand new")
+            self.assertEqual((app / "docs" / "guide.txt").read_text(), "new guide")
+            self.assertIn("secret", (app / "emcomm_bbs_config.json").read_text())
+            self.assertEqual((app / "data" / "input" / "checkin.txt").read_text(), "keep")
+            self.assertFalse((app / "data" / "README").exists())
+            backup = app / updater.BACKUP_DIR
+            self.assertEqual((backup / "emcomm_bbs.py").read_text(), "old code")
+            self.assertEqual((backup / "docs" / "guide.txt").read_text(), "old guide")
+            self.assertEqual(sorted(str(p) for p in copied),
+                             sorted(["docs\\guide.txt" if sys.platform == "win32" else "docs/guide.txt",
+                                     "emcomm_bbs.py", "newmodule.py"]))
+
+    def test_zip_update_layout_detection(self):
+        """GitHub zipballs wrap everything in one top-level folder."""
+        import zipfile
+        with tempfile.TemporaryDirectory() as d:
+            zpath = Path(d) / "rel.zip"
+            with zipfile.ZipFile(zpath, "w") as z:
+                z.writestr("KK4ODA-emcomm-bbs-abc123/emcomm_bbs.py", "v2")
+                z.writestr("KK4ODA-emcomm-bbs-abc123/version.py", "__version__='9.9.9'")
+            app = Path(d) / "app"
+            app.mkdir()
+            (app / "emcomm_bbs.py").write_text("v1")
+
+            class FakeResponse:
+                content = zpath.read_bytes()
+                def raise_for_status(self): pass
+
+            info = updater.UpdateInfo("9.9.9", "v9.9.9", "t", "", "", "http://x/zip", "")
+            original = updater.requests.get
+            updater.requests.get = lambda *a, **k: FakeResponse()
+            try:
+                updater._zip_update(info, app, lambda m: None)
+            finally:
+                updater.requests.get = original
+            self.assertEqual((app / "emcomm_bbs.py").read_text(), "v2")
+            self.assertTrue((app / "version.py").exists())
 
 
 if __name__ == "__main__":
