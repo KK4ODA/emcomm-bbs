@@ -37,7 +37,13 @@ TABLE OF CONTENTS
    6d. Duplicate and Update Handling
    6e. Output Files Generated
 7. Output File Reference
-8. Troubleshooting
+8. Keeping the App Up to Date
+   8a. The Startup Check
+   8b. Installing an Update
+   8c. What an Update Never Touches
+   8d. Rolling Back
+   8e. Turning the Check Off
+9. Troubleshooting
 
 
 ================================================================
@@ -693,7 +699,132 @@ The welfare HTML file is always named welfare_board.html
 
 
 ================================================================
-8. TROUBLESHOOTING
+8. KEEPING THE APP UP TO DATE
+================================================================
+
+New versions are published as releases on GitHub:
+
+  https://github.com/KK4ODA/emcomm-bbs/releases
+
+Starting with version 1.5.0 the app can find and install
+those releases itself. You do not need to visit GitHub or
+re-download anything by hand.
+
+----------------------------------------------------------------
+8a. THE STARTUP CHECK
+----------------------------------------------------------------
+
+About a second after the app opens it asks GitHub whether a
+newer release exists. This happens at most once per day and
+sends nothing but the version number in the request. If the
+check cannot reach GitHub (no internet, or you are in the
+field) it is skipped silently and noted in the Activity Log.
+
+When a newer version exists:
+
+  - The header bar shows "Update x.y.z available".
+  - The Activity Log records it.
+  - A window titled "Update available" opens with the
+    release notes and three choices:
+
+      Update now         Install it immediately (see 8b).
+      Remind me later    Close the window. You will be asked
+                         again tomorrow.
+      Skip this version  Do not mention this particular
+                         version again. A later version will
+                         still be offered.
+
+  "View on GitHub" opens the release page in your browser.
+
+You can run the check yourself at any time: Settings tab,
+"Updates" card, "Check now". The line next to the button
+shows when the last check ran and its result. A manual
+check always shows the window, even for a skipped version.
+
+----------------------------------------------------------------
+8b. INSTALLING AN UPDATE
+----------------------------------------------------------------
+
+Click "Update now" and confirm. The app then:
+
+  1. Stops auto-updates and welfare monitoring if they are
+     running (they must not write files mid-update).
+  2. Fetches the new version. If the app folder was cloned
+     with git and git is installed, this is a "git pull".
+     Otherwise the release ZIP is downloaded from GitHub and
+     its files are copied over the old ones.
+  3. Copies every file it replaces into a folder named
+     .update-backup inside the app folder (see 8d).
+  4. Installs any new Python packages from requirements.txt.
+  5. Shows "Update installed" and restarts itself.
+
+Progress appears in the Activity Log on the Bulletins tab.
+The whole process usually takes well under a minute.
+
+If anything goes wrong, the files that were already replaced
+are put back from the backup, an error window explains what
+failed, and the version you were running keeps working. You
+can always download the release by hand from the releases
+page and unzip it over the app folder instead.
+
+After the restart, remember to click "Start auto-updates"
+and "Start monitoring" again if you use them.
+
+----------------------------------------------------------------
+8c. WHAT AN UPDATE NEVER TOUCHES
+----------------------------------------------------------------
+
+  emcomm_bbs_config.json   Your API keys and every setting
+  settings.json            Standalone Welfare Board settings
+  data\                    Check-in input/archive/error files
+  welfare_board.html       The current board in the app folder
+  .git\                    Git history, if the folder is a clone
+
+Bulletins already written to your output folder (C:\VarAC
+BBS by default) are outside the app folder and are not
+affected either.
+
+Note for git users: if you have edited any tracked file in
+the app folder, "git pull" refuses to overwrite it. The app
+then falls back to the ZIP method, which does replace the
+file but keeps your copy in .update-backup.
+
+----------------------------------------------------------------
+8d. ROLLING BACK
+----------------------------------------------------------------
+
+The .update-backup folder holds the previous copy of every
+file the last update replaced, in the same layout as the app
+folder. To go back:
+
+  1. Close the app.
+  2. Copy the contents of .update-backup over the app
+     folder, replacing files when asked.
+  3. Start the app again.
+
+The backup is overwritten by the next update, so copy it
+somewhere else first if you want to keep it longer. Older
+releases can also be downloaded from the releases page.
+
+----------------------------------------------------------------
+8e. TURNING THE CHECK OFF
+----------------------------------------------------------------
+
+Settings tab, "Updates" card, untick "Check for a new release
+when the app starts". The "Check now" button still works.
+This is useful on machines that are deliberately kept
+offline; the check is harmless without a connection but
+adds a line to the log each start.
+
+For scripts and diagnostics, running
+
+  python updater.py
+
+from the app folder prints whether a newer release exists.
+
+
+================================================================
+9. TROUBLESHOOTING
 ================================================================
 
 Check-ins are being rejected with "No active window"
@@ -759,6 +890,31 @@ App defaults to Downloads folder instead of C:\VarAC BBS
     permission. Run the app as Administrator once to allow
     it to create the folder, or manually create
     C:\VarAC BBS and then restart the app.
+
+"Update check failed" in the log or Settings
+  - The app could not reach api.github.com. Check the
+    internet connection, or ignore it when operating
+    offline. The check runs again tomorrow, or click
+    "Check now" in Settings.
+  - "GitHub rate limit reached" means more than 60 checks
+    came from your address in an hour, which only happens
+    when many machines share one connection. Wait an hour.
+
+"Update failed" after clicking Update now
+  - Read the message: it names the step that failed
+    (download, writing files, or git).
+  - Files that were already replaced are restored
+    automatically. The current version keeps working.
+  - If the app folder is read-only (for example under
+    Program Files), move it somewhere you can write to,
+    such as C:\Emcomm BBS or your Documents folder.
+  - You can always download the release ZIP from
+    https://github.com/KK4ODA/emcomm-bbs/releases and
+    unzip it over the app folder by hand.
+
+App did not restart after an update
+  - Start it again from RUN.bat. The update itself
+    completed; only the relaunch failed.
 
 ================================================================
 END OF USER GUIDE
