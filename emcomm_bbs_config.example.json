@@ -1,18 +1,16 @@
 {
-  "_comment": "Copy this file to emcomm_bbs_config.json and fill in your own values. emcomm_bbs_config.json is gitignored and must never be committed - it holds your API keys.",
+  "_comment": "Copy this file to emcomm_bbs_config.json and fill in your own values. emcomm_bbs_config.json is git-ignored and must never be committed - it holds your API keys. Every key is optional; the app fills in defaults for anything missing.",
 
   "save_directory": "C:\\VarAC BBS",
 
   "anthropic_api_key": "",
   "twitter_token": "",
-  "nextdoor_key": "",
-
   "twitter_handles": "NWS,fema,USGS_Quakes,NWSAlerts,CDCgov,NHC_Atlantic",
+  "nextdoor_key": "",
   "nextdoor_zips": "",
 
-  "time_windows": [
-    { "name": "All Day", "start": "00:00", "end": "23:59" }
-  ],
+  "main_interval_hours": 6,
+  "twitter_interval_hours": 6,
 
   "weather_regions": [4],
 
@@ -21,8 +19,16 @@
     "weather": true,
     "space": true,
     "emergency": true,
-    "twitter": false,
     "power": true,
+    "twitter": false,
     "nextdoor": false
-  }
+  },
+
+  "time_windows": [
+    { "name": "All Day", "start": "00:00", "end": "23:59" }
+  ],
+
+  "welfare_monitor_dir": "C:\\VarAC\\Files in",
+  "welfare_archive_dir": "C:\\VarAC\\Files in\\welfare_archive",
+  "welfare_error_dir": "C:\\VarAC\\Files in\\welfare_error"
 }

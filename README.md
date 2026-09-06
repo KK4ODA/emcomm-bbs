@@ -1,28 +1,30 @@
 # Emcomm BBS
 
 **A desktop companion for amateur radio emergency communications.** It pulls
-situational-awareness data from public sources and renders it as ultra-compact
-plain-text bulletins sized for low-bandwidth HF links — VarAC, Winlink, packet —
-plus a Welfare Board that turns incoming check-in files into a live roster.
+situational-awareness data from public sources and renders it as compact
+plain-text bulletins sized for low-bandwidth HF links — VarAC, Winlink,
+packet — plus a Welfare Board that turns incoming check-in files into a live
+roster.
 
-Typical bulletin is **5–15 KB**, roughly 90% smaller than the equivalent PDF.
+A full set of bulletins is **20–30 KB**, roughly 95% smaller than the
+equivalent PDFs.
 
 ---
 
 ## Modules
 
-| Module | What it gives you | Source |
+| Bulletin | What it gives you | Source |
 |---|---|---|
-| **News Summary** | Top headlines, optionally condensed by AI | BBC, AP |
-| **Weather** | 7-day forecasts, selectable by FEMA region | NWS |
-| **Space Weather** | Solar flux, K-index, HF band conditions | NOAA SWPC |
-| **Emergency Alerts** | Active alerts, earthquakes, declared disasters, wildfires | NWS, USGS, FEMA |
-| **Power Outages** | Live outage counts by state/county | DOE / ORNL ODIN |
-| **Social Feed** | Posts from official emergency accounts | X/Twitter API |
+| **News summary** | Top headlines, optionally condensed by Claude | BBC, NPR (RSS) |
+| **Weather** | 7-day forecasts for major cities, selectable by FEMA region | NWS |
+| **Space weather** | Solar flux, K-index, HF band conditions, 3-day outlook | NOAA SWPC |
+| **Emergency alerts** | Active alerts, M4.5+ earthquakes, disaster declarations, largest active wildfires | NWS, USGS, FEMA, NIFC |
+| **Power outages** | Live outage counts by state and utility | DOE / ORNL ODIN |
+| **X / Twitter feed** | Posts from official emergency accounts | X API v2 |
 | **Nextdoor** | Local neighborhood reports (agency API required) | Nextdoor |
-| **Welfare Board** | Watches a folder for check-in files, publishes HTML/TXT/CSV roster | Local files |
+| **Welfare Board** | Watches a folder for check-in files, publishes an HTML/TXT/CSV roster | Local files |
 
-Everything except the AI summary, social feed, and Nextdoor works with **no API
+Everything except the AI digest, the X feed, and Nextdoor works with **no API
 keys at all**.
 
 ---
@@ -31,13 +33,10 @@ keys at all**.
 
 1. Install [Python 3.8+](https://www.python.org/downloads/) and tick **"Add Python to PATH"**.
 2. Download this repository (green **Code** button → **Download ZIP**) and extract it.
-3. Double-click **`RUN.bat`**. It installs what's missing and launches the app.
-4. Pick your modules and click **Generate Now**.
+3. Double-click **`RUN.bat`**. It installs anything missing and launches the app.
+4. Tick the bulletins you want and click **Generate now**.
 
-Reports land in `C:\VarAC BBS\` by default — change it on the Settings tab.
-
-For the full launcher with dependency checks and data-folder setup, use
-**`RUN_EMERGENCY_SUITE.bat`** instead.
+Bulletins land in `C:\VarAC BBS\` by default — change it on the Settings tab.
 
 ## Quick start — Linux / macOS
 
@@ -49,7 +48,7 @@ chmod +x run_unix.sh
 ## Manual install
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 python emcomm_bbs.py
 ```
 
@@ -57,13 +56,38 @@ On Linux you may also need tkinter: `sudo apt-get install python3-tk`.
 
 ---
 
+## Using the app
+
+**Bulletins tab.** Tick what to generate, pick FEMA regions for the weather
+files, then either **Generate now** for a one-off run or **Start auto-updates**
+to regenerate on the interval set in Settings. The activity log shows every
+fetch and the size of each file written. Each new bulletin replaces the
+previous one of the same type, so the output folder always holds one current
+set.
+
+**Settings tab.** API keys, the output folder, update intervals, and the
+Welfare Board check-in windows. Click **Save settings** to apply. Checkboxes
+on the Bulletins tab save themselves.
+
+**Welfare Board tab.** Choose the folder VarAC drops incoming files into,
+click **Start monitoring**, and open the board in a browser with **Open board**.
+
+Output file names:
+
+```
+news_MMDD_HHMM.txt            wx_R4_MMDD_HHMM.txt (one per region)
+space_MMDD_HHMM.txt           emergency_MMDD_HHMM.txt
+power_outages_MMDD_HHMM.txt   tweets_MMDD_HHMM.txt
+nextdoor_MMDD_HHMM.txt        welfare_board.html / welfare_DATE_WINDOW.txt / .csv
+```
+
+---
+
 ## Configuration
 
-On first run the app writes **`emcomm_bbs_config.json`** next to the script.
+On first save the app writes **`emcomm_bbs_config.json`** next to the script.
 This file holds your API keys and is **excluded from version control** — see
-`.gitignore`.
-
-To start from a template:
+`.gitignore`. To start from a template:
 
 ```bash
 cp emcomm_bbs_config.example.json emcomm_bbs_config.json
@@ -71,8 +95,8 @@ cp emcomm_bbs_config.example.json emcomm_bbs_config.json
 
 | Key | Needed for | Where to get it |
 |---|---|---|
-| `anthropic_api_key` | AI news summaries | [console.anthropic.com](https://console.anthropic.com/) |
-| `twitter_token` | Social emergency feed | X/Twitter developer portal |
+| `anthropic_api_key` | AI news digest | [console.anthropic.com](https://console.anthropic.com/) |
+| `twitter_token` | X / Twitter feed | X developer portal |
 | `nextdoor_key` | Nextdoor reports | Nextdoor agency program |
 
 Leave any of them blank to disable that feature. Without an Anthropic key you
@@ -97,15 +121,25 @@ CALLSIGN: W1ABC
 NAME: Jane Doe
 LOCATION: Springfield, MA
 STATUS: SAFE
+POWER: ON
+CONTACT: 555-123-4567
 MESSAGE: All well here, no damage.
 ```
 
-Valid statuses are `SAFE`, `NEED ASSISTANCE`, and `TRAFFIC` — configurable in
-`settings.json`. See `examples/` for complete samples and
-`docs/Emcomm_BBS_User_Guide.txt` for the full setup walkthrough.
+`CALLSIGN`, `POWER` and `CONTACT` are optional, so non-licensed family
+members can check in by name. Valid statuses are `SAFE`, `NEED ASSISTANCE`,
+and `TRAFFIC`. A second check-in from the same person with new information
+is recorded as an update; an identical one is ignored. See `examples/` for
+complete samples and `docs/Emcomm_BBS_User_Guide.txt` for the full walkthrough.
 
 Processed files move to an archive folder; files that fail validation move to
 an error folder with a companion `.error.txt` explaining why.
+
+The board can also run on its own, without the bulletin generator:
+
+```bash
+python welfare_board.py
+```
 
 ---
 
@@ -113,29 +147,43 @@ an error folder with a companion `.error.txt` explaining why.
 
 ```
 emcomm_bbs.py                  Main GUI application
-emergency_module.py            NWS / USGS / FEMA / wildfire / social fetchers
-emergency_checker.py           Standalone CLI emergency check (no GUI)
+app_config.py                  Settings file handling and defaults
+data_sources.py                NWS, NOAA, news, and ODIN fetchers
+emergency_module.py            NWS alerts, USGS, FEMA, wildfire, X feed
 nextdoor_module.py             Nextdoor integration
 plaintext_generators.py        Compact .txt bulletin formatters
+ui_theme.py                    Shared look and feel for both GUIs
 
 welfare_board.py               Standalone Welfare Board GUI
-parser.py                      Check-in file parser
+welfare_pipeline.py            Check-in pipeline shared by both GUIs
+welfare_parser.py              Check-in file parser
 validator.py                   Check-in field validation
-aggregator.py                  Time-window grouping
+aggregator.py                  Time-window grouping and update tracking
 output_generator.py            HTML / TXT / CSV board output
 file_watcher.py                Directory watcher
-test_time_windows.py           Time-window sanity test
 
-settings.json                  Welfare Board settings (no secrets)
+emergency_checker.py           Console-only conditions check (no GUI)
+tests/                         Offline unit tests
+
+settings.json                  Standalone Welfare Board settings (no secrets)
 emcomm_bbs_config.example.json Template for your own config
 welfare_checkin_template.txt   Template operators fill out
 examples/                      Sample check-in files
 docs/                          Full user guide
 
 RUN.bat                        Windows launcher
-RUN_EMERGENCY_SUITE.bat        Windows launcher with full preflight checks
 run_unix.sh                    Linux / macOS launcher
+PUSH-TO-GITHUB.bat             Commit and push (see SYNCING.md)
+PULL-FROM-GITHUB.bat           Pull the latest from GitHub
 ```
+
+## Development
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+The tests run offline; no API keys or network access are needed.
 
 ---
 
@@ -144,7 +192,8 @@ run_unix.sh                    Linux / macOS launcher
 No GUI, prints current conditions to the console:
 
 ```bash
-python emergency_checker.py
+python emergency_checker.py        # national
+python emergency_checker.py TX     # NWS alerts for one state
 ```
 
 ---

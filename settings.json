@@ -24,7 +24,7 @@
     "html_auto_refresh": 30
   },
   "validation": {
-    "require_callsign": true,
+    "require_callsign": false,
     "require_name": true,
     "require_location": true,
     "require_status": true,
@@ -33,10 +33,5 @@
       "NEED ASSISTANCE",
       "TRAFFIC"
     ]
-  },
-  "logging": {
-    "level": "INFO",
-    "max_file_size_mb": 10,
-    "backup_count": 5
   }
 }

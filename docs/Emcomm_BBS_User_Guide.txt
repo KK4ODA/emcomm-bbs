@@ -67,19 +67,19 @@ to stations requesting content over the air.
 2. FIRST-TIME SETUP
 ================================================================
 
-Step 1. Launch the app by running emcomm_bbs.py or the
-        RUN.bat file in the application folder.
+Step 1. Launch the app by double-clicking RUN.bat (or running
+        python emcomm_bbs.py) in the application folder.
 
 Step 2. Go to the Settings tab. You will configure your API
         keys, output folder, and welfare time windows here
         before doing anything else.
 
-Step 3. Set your Anthropic API key if you want AI-generated
+Step 3. Enter your Anthropic API key if you want AI-generated
         news summaries. Without it, the app will still collect
         headlines, but there will be no executive summary.
 
-Step 4. If you want emergency tweets, enter your Twitter
-        Bearer Token and click Set.
+Step 4. If you want emergency tweets, enter your X / Twitter
+        bearer token.
 
 Step 5. Confirm the Output Directory points to your VarAC BBS
         folder. The default is C:\VarAC BBS, which the app
@@ -91,9 +91,9 @@ Step 6. Go to the Welfare Board tab. Set the Monitor Folder
         pre-populates this with your VarAC path.
 
 Step 7. Back on the Settings tab, confirm or adjust the
-        Welfare Board Time Windows. By default the system
+        Welfare check-in windows. By default the system
         accepts check-ins 24 hours a day (00:00-23:59). Click
-        "Apply Time Windows" after making any changes.
+        "Save settings" to apply everything on the tab.
 
 Step 8. You are ready to go. Return to the Main tab.
 
@@ -109,20 +109,21 @@ what content to generate and start or stop the service.
 3a. SELECTING WHAT TO GENERATE
 ----------------------------------------------------------------
 
-The "Select Outputs to Generate" section has checkboxes for
-each type of content. Check or uncheck them to control what
-gets produced each cycle.
+The "Bulletins" card has a checkbox for each type of content
+with a one-line description of its source. Check or uncheck
+them to control what gets produced each cycle; the selection
+is saved automatically.
 
   News Summary
-    Fetches headlines from BBC, AP, and CNN. If an Anthropic
-    API key is set, also generates an AI executive summary.
-    Output: news_YYYY-MM-DD_HHMM.txt (and .pdf, .html)
+    Fetches headlines from BBC and NPR. If an Anthropic API
+    key is set, also generates an AI-written digest.
+    Output: news_MMDD_HHMM.txt
 
   Weather Forecasts
     Fetches 7-day forecasts from the National Weather Service
     for major cities in each selected FEMA region.
-    Output: weather_rN_YYYY-MM-DD_HHMM.txt (one file per
-    selected region, where N is the region number)
+    Output: wx_RN_MMDD_HHMM.txt (one file per selected
+    region, where N is the region number)
 
   Space Weather
     Fetches solar flux, sunspot number, K-index, A-index,
@@ -190,7 +191,7 @@ the "Weather Forecasts" checkbox is checked.
 
 There are three buttons in the control area:
 
-  Start Automatic Updates
+  Start auto-updates
     Starts a background loop that generates all checked
     outputs immediately, then repeats on the schedule set
     in the Update Intervals section of Settings (default:
@@ -201,7 +202,7 @@ There are three buttons in the control area:
     Halts the automatic update loop. Any in-progress
     generation will complete before stopping.
 
-  Generate Now
+  Generate now
     Runs a single generation cycle immediately, regardless
     of the automatic schedule. Useful for on-demand updates
     or testing. Does not affect the automatic loop if it
@@ -292,7 +293,7 @@ update frequency in Settings to get fresher data.
 
 Step 1. Obtain an API key from console.anthropic.com.
 Step 2. Paste the key into the "Anthropic API Key" field.
-Step 3. Click "Set."
+Step 3. Click "Save settings."
 Step 4. The log will confirm "Anthropic API key set."
 
 Without a key, News Summary outputs will contain headline
@@ -307,7 +308,7 @@ Step 1. Create a developer account at developer.twitter.com
         The free tier provides 500,000 tweets per month,
         which is more than sufficient for this use.
 Step 2. Paste the token into the "Twitter Bearer Token" field.
-Step 3. Click "Set."
+Step 3. Click "Save settings."
 Step 4. The log will confirm the token is set and show which
         accounts will be monitored.
 
@@ -342,7 +343,7 @@ which must be applied for through Nextdoor directly.
 Step 1. Enter your Nextdoor API key in the field provided.
 Step 2. Enter the ZIP codes to monitor, comma-separated.
         Example: 30301,30308,30309
-Step 3. Click "Set" (or "Update" after initial setup).
+Step 3. Click "Save settings."
 
 The Nextdoor checkbox on the Main tab will be automatically
 enabled when configured.
@@ -405,7 +406,7 @@ Example net-based configuration:
   Window 2: Evening Net   19:00 - 21:00
   Window 3: (blank / disabled)
 
-After making changes, click "Apply Time Windows." A
+After making changes, click "Save settings." A
 confirmation dialog will show the active windows. Note that
 applying new windows resets the current session's check-in
 data, so do this before a net begins, not during.
@@ -670,27 +671,18 @@ the news and weather files (the VarAC BBS folder).
 All output files are saved to the configured Output Directory
 (default: C:\VarAC BBS). File naming conventions:
 
-  news_YYYY-MM-DD_HHMM.txt          News summary (text)
-  news_YYYY-MM-DD_HHMM.pdf          News summary (PDF)
-  news_YYYY-MM-DD_HHMM.html         News summary (HTML)
+  news_MMDD_HHMM.txt                News summary
+  wx_R4_MMDD_HHMM.txt               Weather for FEMA R4
+                                    (one file per selected region)
+  space_MMDD_HHMM.txt               Space weather / HF bands
+  emergency_MMDD_HHMM.txt           Emergency alerts
+  power_outages_MMDD_HHMM.txt       DOE/ORNL ODIN outage report
+                                    (national + state + utility)
+  tweets_MMDD_HHMM.txt              X / Twitter feed
+  nextdoor_MMDD_HHMM.txt            Nextdoor local posts
 
-  weather_r4_YYYY-MM-DD_HHMM.txt    Weather for FEMA R4
-  weather_r4_YYYY-MM-DD_HHMM.pdf    (one set per selected region)
-
-  space_weather_YYYY-MM-DD_HHMM.txt  Space weather / HF bands
-  space_weather_YYYY-MM-DD_HHMM.pdf
-
-  emergency_YYYY-MM-DD_HHMM.txt     Emergency alerts (text)
-  emergency_YYYY-MM-DD_HHMM.html    Emergency alerts (HTML)
-
-  twitter_YYYY-MM-DD_HHMM.txt       Twitter/X feed
-  twitter_YYYY-MM-DD_HHMM.html
-
-  nextdoor_YYYY-MM-DD_HHMM.txt      Nextdoor local posts
-  nextdoor_YYYY-MM-DD_HHMM.html
-
-  power_outages_MMDD_HHMM.txt        DOE/ORNL ODIN outage report
-                                     (national + state + utility)
+Each new bulletin replaces the previous one of the same type,
+so the folder always holds exactly one current set.
 
   welfare_YYYY-MM-DD_HHMM-HHMM.txt  Welfare board (text)
   welfare_board.html                 Welfare board (HTML, live)
@@ -707,7 +699,7 @@ The welfare HTML file is always named welfare_board.html
 Check-ins are being rejected with "No active window"
   - Verify the current time falls within a configured
     Welfare Board Time Window on the Settings tab.
-  - Click "Apply Time Windows" if you recently made changes.
+  - Click "Save settings" if you recently made changes.
   - The Current Window label on the Welfare Board tab shows
     whether a window is active right now.
 
@@ -721,13 +713,13 @@ Check-in rejected with validation error
 
 News summary contains headlines only, no executive summary
   - The Anthropic API key is not set or is invalid.
-  - Go to Settings, re-enter the key, and click "Set."
+  - Go to Settings, re-enter the key, and click "Save settings."
 
 Weather output not generating for a region
   - Confirm the region checkbox is checked on the Main tab.
   - NWS API occasionally returns errors for individual
     cities. The app skips failures and continues. If an
-    entire region is empty, try Generate Now again.
+    entire region is empty, try Generate now again.
 
 Twitter feed not generating
   - Confirm the Bearer Token is set and the log shows
@@ -750,7 +742,7 @@ Power outage report shows "Data unavailable"
     is under high load.
   - The report will still be saved with a note directing
     users to check poweroutage.us for current information.
-  - Try Generate Now again in a few minutes.
+  - Try Generate now again in a few minutes.
 
 Power outage report shows many utilities with state "??"
   - The utility's EIA ID was not found in the built-in

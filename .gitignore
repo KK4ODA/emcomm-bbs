@@ -8,6 +8,7 @@ emcomm_bbs_config.json
 
 # Python cache / build
 __pycache__/
+.pytest_cache/
 *.py[cod]
 *$py.class
 .Python
@@ -22,9 +23,12 @@ logs/
 
 # Generated reports and boards
 welfare_board.html
-welfare_board.csv
+welfare_*.csv
+welfare_*.txt
+!welfare_checkin_template.txt
 *_report.txt
 BBS_*.txt
+test_output/
 
 # Virtual environments
 venv/
