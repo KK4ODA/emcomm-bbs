@@ -9,6 +9,8 @@ roster.
 A full set of bulletins is **20–30 KB**, roughly 95% smaller than the
 equivalent PDFs.
 
+![Emcomm BBS main window after a generation run](docs/images/emcomm-bbs-main.png)
+
 ---
 
 ## Modules
