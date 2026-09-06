@@ -137,6 +137,8 @@ complete samples and `docs/Emcomm_BBS_User_Guide.txt` for the full walkthrough.
 Processed files move to an archive folder; files that fail validation move to
 an error folder with a companion `.error.txt` explaining why.
 
+![Welfare Board tab with two check-ins received](docs/images/emcomm-bbs-welfare.png)
+
 The board can also run on its own, without the bulletin generator:
 
 ```bash
