@@ -20,7 +20,9 @@ python -m unittest discover -s tests || (echo Tests failed; release aborted. & g
 git add version.py
 git commit -m "Release v%VER%" || exit /b 1
 git tag -a "v%VER%" -m "Emcomm BBS v%VER%" || exit /b 1
-git push origin main --follow-tags || exit /b 1
+git push origin main || exit /b 1
+:: The tag is pushed on its own so GitHub reliably fires the Release workflow.
+git push origin "v%VER%" || exit /b 1
 gh release create "v%VER%" --title "Emcomm BBS %VER%" --latest --notes-file "%TEMP%\emcomm_release_notes.md" || exit /b 1
 echo.
 echo Released v%VER%. The installer build is running at:
