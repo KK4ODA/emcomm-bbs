@@ -15,7 +15,7 @@ if "%~1"=="" (
 set VER=%~1
 git diff --quiet || (echo Working tree has uncommitted changes. Commit or stash them first. & exit /b 1)
 python packaging\release_notes.py %VER% > "%TEMP%\emcomm_release_notes.md" || (echo Add a "## [%VER%]" section to CHANGELOG.md first. & exit /b 1)
-python -c "import re,pathlib;p=pathlib.Path('version.py');s=p.read_text(encoding='utf-8');n=re.sub(r'__version__ = \"[^\"]+\"','__version__ = \"%VER%\"',s);p.write_text(n,encoding='utf-8');print('version.py ->','%VER%')" || exit /b 1
+python packaging\bump_version.py %VER% || exit /b 1
 python -m unittest discover -s tests || (echo Tests failed; release aborted. & git checkout -- version.py & exit /b 1)
 git add version.py
 git commit -m "Release v%VER%" || exit /b 1
