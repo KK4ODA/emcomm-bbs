@@ -306,6 +306,7 @@ def field_row(parent, label, widget_factory, hint=None, button=None, row=0, pady
         button.grid(row=row, column=2, sticky="e", padx=(8, 0), pady=pady)
     if hint:
         tk.Label(parent, text=hint, bg=p["card"], fg=p["muted"], font=FONTS["small"],
-                 anchor="w").grid(row=row + 1, column=1, columnspan=2, sticky="w", pady=(0, 10))
+                 anchor="w", justify="left", wraplength=620
+                 ).grid(row=row + 1, column=1, columnspan=2, sticky="w", pady=(0, 10))
     parent.columnconfigure(1, weight=1)
     return widget

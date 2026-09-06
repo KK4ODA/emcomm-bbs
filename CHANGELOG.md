@@ -3,6 +3,24 @@
 All notable changes to Emcomm BBS are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] — 2026-09-06
+
+### Added
+
+- **Stations heard bulletin** (`stations_MMDD_HHMM.txt`), fed by the
+  [VarMap](https://github.com/KK4ODA/VarMap) companion app when it is
+  running: every VarAC station heard in a configurable window with grid,
+  distance and bearing from your station, band, SNR, time since last heard,
+  and tags (EMCOMM, BBS, EMAIL, AWAY, CQ tag, and the station's welfare
+  status when it has checked in). Settings → VarMap holds the address
+  (default `http://127.0.0.1:5001`), the lookback in hours, and a Test
+  button. When VarMap is not running the bulletin is skipped with one log
+  line and the other bulletins are unaffected. At startup the app probes
+  VarMap once and mentions the bulletin if it is found.
+- In the other direction, VarMap 0.4.0 reads this app's welfare CSV and
+  marks checked-in stations on its map. Nothing changes on this side; the
+  CSV it reads is the one the Welfare Board already writes.
+
 ## [1.5.1] — 2026-09-06
 
 ### Changed

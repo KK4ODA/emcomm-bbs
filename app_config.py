@@ -27,7 +27,9 @@ DEFAULT_CHECKBOXES = {
     "power": True,
     "twitter": False,
     "nextdoor": False,
+    "stations": False,     # VarAC stations heard, needs VarMap running
 }
+DEFAULT_VARMAP_URL = "http://127.0.0.1:5001"
 VALID_STATUSES = ["SAFE", "NEED ASSISTANCE", "TRAFFIC"]
 MAX_TIME_WINDOWS = 3
 
@@ -123,6 +125,8 @@ class AppConfig:
     welfare_monitor_dir: str = field(default_factory=default_varac_dir)
     welfare_archive_dir: str = field(default_factory=lambda: default_varac_dir("welfare_archive"))
     welfare_error_dir: str = field(default_factory=lambda: default_varac_dir("welfare_error"))
+    varmap_url: str = DEFAULT_VARMAP_URL    # companion app serving the station list
+    varmap_hours: int = 24                  # lookback for the stations-heard bulletin
     check_updates: bool = True          # look for a new GitHub release at startup
     skipped_version: str = ""           # release the operator chose to ignore
     last_update_check: str = ""         # YYYY-MM-DD of the last automatic check

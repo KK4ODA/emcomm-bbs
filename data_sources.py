@@ -648,3 +648,68 @@ class PowerOutageFetcher:
             result['national_summary'] = (
                 f"No significant outages reported across {len(data)} monitored utilities."
             )
+
+
+# ---------------------------------------------------------------------------
+# VarMap (companion app) - stations heard on VarAC
+# ---------------------------------------------------------------------------
+
+class VarMapUnavailable(Exception):
+    """VarMap is not running, or not reachable at the configured URL."""
+
+
+class VarMapClient:
+    """Reads the station list from a running VarMap (github.com/KK4ODA/VarMap).
+
+    VarMap serves JSON on localhost only. Every method raises
+    ``VarMapUnavailable`` with an operator-readable message when it cannot
+    be reached, so callers can skip the bulletin quietly.
+    """
+
+    DEFAULT_URL = "http://127.0.0.1:5001"
+
+    def __init__(self, base_url=None, timeout=5):
+        self.base_url = (base_url or self.DEFAULT_URL).strip().rstrip("/")
+        if not self.base_url.startswith(("http://", "https://")):
+            self.base_url = "http://" + self.base_url
+        self.timeout = timeout
+
+    def _get(self, path):
+        try:
+            r = requests.get(f"{self.base_url}{path}", timeout=self.timeout,
+                             headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+            r.raise_for_status()
+            return r.json()
+        except requests.ConnectionError as exc:
+            raise VarMapUnavailable(f"VarMap is not running at {self.base_url}") from exc
+        except requests.Timeout as exc:
+            raise VarMapUnavailable(f"VarMap at {self.base_url} did not answer within {self.timeout}s") from exc
+        except (requests.RequestException, ValueError) as exc:
+            raise VarMapUnavailable(f"VarMap at {self.base_url}: {exc}") from exc
+
+    def health(self):
+        """VarMap's /api/health: version, VarAC state, own station, counts."""
+        data = self._get("/api/health")
+        if not isinstance(data, dict) or "version" not in data:
+            raise VarMapUnavailable(f"{self.base_url} answered, but it is not VarMap")
+        return data
+
+    def stations(self, hours=24):
+        """Stations heard within ``hours``, newest first.
+
+        Returns {'stations': [...], 'own': {...} or None, 'now': iso}. Each
+        station keeps VarMap's own fields (callsign, grid, distance_display,
+        bearing_deg, last_band, last_snr_db, heard_age_s, flags, welfare...).
+        """
+        data = self._get("/api/stations")
+        limit = max(0.0, float(hours)) * 3600
+        rows = []
+        for st in data.get("stations", []):
+            age = st.get("heard_age_s")
+            if age is None or (limit and age > limit):
+                continue
+            if st.get("is_hidden"):
+                continue
+            rows.append(st)
+        rows.sort(key=lambda s: s.get("heard_age_s", 1e12))
+        return {"stations": rows, "own": data.get("own"), "now": data.get("now")}

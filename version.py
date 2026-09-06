@@ -5,4 +5,4 @@ Bump this, add a CHANGELOG section, then tag and publish a GitHub release
 Running copies compare this number against the latest release tag.
 """
 
-__version__ = "1.5.1"
+__version__ = "1.6.0"

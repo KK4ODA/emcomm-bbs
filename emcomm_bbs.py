@@ -34,6 +34,7 @@ from app_config import AppConfig, APP_DIR, MAX_TIME_WINDOWS  # noqa: E402
 from data_sources import (  # noqa: E402
     APP_VERSION, FEMA_REGIONS, FEMA_REGION_LABELS,
     WeatherFetcher, SpaceWeatherFetcher, NewsSummarizer, PowerOutageFetcher,
+    VarMapClient, VarMapUnavailable,
 )
 from plaintext_generators import PlainTextGenerator  # noqa: E402
 import ui_theme  # noqa: E402
@@ -67,6 +68,7 @@ REPORTS = [
     ("power",     "Power outages",     "DOE / ORNL ODIN live outage counts",                    "power_outages_"),
     ("twitter",   "X / Twitter feed",  "Official emergency accounts (bearer token required)",   "tweets_"),
     ("nextdoor",  "Nextdoor",          "Neighborhood reports (agency API key required)",        "nextdoor_"),
+    ("stations",  "Stations heard",    "VarAC stations on the air, from VarMap when it is running", "stations_"),
 ]
 REPORT_PREFIX = {key: prefix for key, _, _, prefix in REPORTS}
 TIME_RE = re.compile(r'^([01]\d|2[0-3]):[0-5]\d$')
@@ -127,6 +129,8 @@ class EmcommApp:
         self._update_info = None
         self._updating = False
         self.root.after(1500, self._auto_update_check)
+        self.root.after(2500, lambda: threading.Thread(target=self._probe_varmap, args=(False,),
+                                                       daemon=True).start())
 
     # ------------------------------------------------------------------ UI
 
@@ -288,10 +292,29 @@ class EmcommApp:
                  bg=PALETTE["card"], fg=PALETTE["muted"], font=FONTS["small"], justify="left"
                  ).grid(row=2, column=0, columnspan=3, sticky="w", pady=(6, 0))
 
+        # Integrations -----------------------------------------------------------
+        integ = Card(body, "VarMap", "companion app that maps the stations VarAC hears")
+        integ.grid(row=2, column=0, **pad)
+        f = integ.body
+        self.varmap_url_var = tk.StringVar()
+        test_btn = ttk.Button(f, text="Test", command=lambda: threading.Thread(
+            target=self._probe_varmap, args=(True,), daemon=True).start())
+        field_row(f, "VarMap address", lambda m: ttk.Entry(m, textvariable=self.varmap_url_var),
+                  hint="VarMap's web address, normally http://127.0.0.1:5001 on this PC. The "
+                       "Stations heard bulletin is skipped when VarMap is not running.",
+                  button=test_btn, row=0)
+        hrs = tk.Frame(f, bg=PALETTE["card"])
+        hrs.grid(row=2, column=0, columnspan=3, sticky="w")
+        self.varmap_hours = tk.IntVar(value=24)
+        self._interval_row(hrs, 0, "List stations heard in the last", self.varmap_hours, 1, 168)
+        self.varmap_status_label = tk.Label(f, text="", bg=PALETTE["card"], fg=PALETTE["muted"],
+                                            font=FONTS["small"], justify="left")
+        self.varmap_status_label.grid(row=3, column=0, columnspan=3, sticky="w", pady=(6, 0))
+
         # Welfare windows ------------------------------------------------------
         win = Card(body, "Welfare check-in windows",
                    "check-ins outside these times are rejected; blank name disables a row")
-        win.grid(row=2, column=0, **pad)
+        win.grid(row=3, column=0, **pad)
         f = win.body
         for col, text in enumerate(("", "Name", "Start", "End")):
             tk.Label(f, text=text, bg=PALETTE["card"], fg=PALETTE["muted"],
@@ -313,7 +336,7 @@ class EmcommApp:
 
         # Updates --------------------------------------------------------------
         upd = Card(body, "Updates", f"version {APP_VERSION}")
-        upd.grid(row=3, column=0, **pad)
+        upd.grid(row=4, column=0, **pad)
         f = upd.body
         self.check_updates_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(f, text="Check for a new release when the app starts",
@@ -333,7 +356,7 @@ class EmcommApp:
 
         # Save ---------------------------------------------------------------
         foot = ttk.Frame(body)
-        foot.grid(row=4, column=0, sticky="ew", pady=14)
+        foot.grid(row=5, column=0, sticky="ew", pady=14)
         ttk.Button(foot, text="Save settings", style="Accent.TButton",
                    command=self.save_settings).pack(side="left")
         ttk.Label(foot, text="Stored in emcomm_bbs_config.json next to the app. "
@@ -456,6 +479,8 @@ class EmcommApp:
         if hasattr(self, "welfare_dir_vars"):
             for key, var in self.welfare_dir_vars.items():
                 var.set(getattr(c, key))
+        self.varmap_url_var.set(c.varmap_url)
+        self.varmap_hours.set(c.varmap_hours)
         self.check_updates_var.set(c.check_updates)
         if c.last_update_check:
             self.update_status_label.configure(text=f"Last checked {c.last_update_check}")
@@ -499,6 +524,11 @@ class EmcommApp:
         c.checkboxes = {k: v.get() for k, v in self.report_vars.items()}
         c.weather_regions = [i for i, v in self.region_vars.items() if v.get()]
         c.check_updates = self.check_updates_var.get()
+        c.varmap_url = self.varmap_url_var.get().strip() or VarMapClient.DEFAULT_URL
+        try:
+            c.varmap_hours = max(1, int(self.varmap_hours.get()))
+        except (tk.TclError, ValueError):
+            return "VarMap lookback must be a whole number of hours."
         return None
 
     def save_settings(self):
@@ -748,6 +778,43 @@ class EmcommApp:
                              lambda p: PlainTextGenerator.create_nextdoor_txt(
                                  p, posts, self.nextdoor_fetcher.zip_codes))
         return True
+
+    def _generate_stations(self):
+        client = VarMapClient(self.config.varmap_url)
+        self.set_status("Reading VarMap…")
+        try:
+            health = client.health()
+            data = client.stations(self.config.varmap_hours)
+        except VarMapUnavailable as exc:
+            self.log(f"⚠ Stations heard: {exc} - skipped")
+            return False
+        self.log(f"Stations heard: {len(data['stations'])} in the last {self.config.varmap_hours}h "
+                 f"(VarMap {health.get('version', '?')})")
+        self._write_bulletin(REPORT_PREFIX["stations"],
+                             lambda p: PlainTextGenerator.create_stations_txt(
+                                 p, data, self.config.varmap_hours, health))
+        return True
+
+    def _probe_varmap(self, manual):
+        """Worker thread: report whether VarMap answers at the configured address."""
+        url = self.varmap_url_var.get().strip() if manual else self.config.varmap_url
+        client = VarMapClient(url)
+        try:
+            health = client.health()
+        except VarMapUnavailable as exc:
+            if manual:
+                self.ui(self.varmap_status_label.configure, {"text": f"Not reachable: {exc}"})
+                self.log(f"⚠ VarMap test: {exc}")
+            return
+        counts = health.get("counts") or {}
+        varac = health.get("varac") or {}
+        text = (f"VarMap {health.get('version', '?')} at {client.base_url}: "
+                f"{counts.get('stations', 0)} stations known, {counts.get('stations_with_position', 0)} located"
+                + (f", own call {varac['mycall']}" if varac.get("mycall") else ""))
+        self.ui(self.varmap_status_label.configure, {"text": text})
+        if manual or not self.report_vars["stations"].get():
+            self.log(f"✓ {text}" if manual else f"VarMap detected at {client.base_url} - "
+                     "tick 'Stations heard' to include a VarAC station list in each run")
 
     # ------------------------------------------------------------ scheduler
 

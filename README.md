@@ -24,10 +24,16 @@ equivalent PDFs.
 | **Power outages** | Live outage counts by state and utility | DOE / ORNL ODIN |
 | **X / Twitter feed** | Posts from official emergency accounts | X API v2 |
 | **Nextdoor** | Local neighborhood reports (agency API required) | Nextdoor |
+| **Stations heard** | VarAC stations on the air with grid, distance, band, SNR, tags | [VarMap](https://github.com/KK4ODA/VarMap), when running |
 | **Welfare Board** | Watches a folder for check-in files, publishes an HTML/TXT/CSV roster | Local files |
 
 Everything except the AI digest, the X feed, and Nextdoor works with **no API
 keys at all**.
+
+**Runs alongside VarMap.** With [VarMap](https://github.com/KK4ODA/VarMap)
+on the same PC, the *Stations heard* bulletin lists what VarAC is hearing,
+and VarMap 0.4+ marks the stations on its map that have checked in on this
+app's Welfare Board. Each side simply skips the other when it is not running.
 
 ---
 

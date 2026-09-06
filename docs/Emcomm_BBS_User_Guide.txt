@@ -159,6 +159,19 @@ is saved automatically.
     No API key required - the data is publicly available.
     Output: power_outages_MMDD_HHMM.txt
 
+  Stations Heard
+    Lists the VarAC stations heard recently, read from the
+    VarMap companion app (github.com/KK4ODA/VarMap) when it
+    is running on this PC: callsign, grid, distance and
+    bearing from your station, band, SNR, time since last
+    heard, and tags such as EMCOMM, BBS, EMAIL, AWAY and the
+    station's welfare status if it has checked in. The
+    VarMap address and the lookback window are on the
+    Settings tab (VarMap card), with a Test button. When
+    VarMap is not running the bulletin is skipped with a
+    single log line; nothing else is affected.
+    Output: stations_MMDD_HHMM.txt
+
   Nextdoor (Local)  [only visible if module is enabled]
     Fetches local community posts from Nextdoor for the
     configured ZIP codes. Requires Nextdoor API approval.
@@ -686,6 +699,7 @@ All output files are saved to the configured Output Directory
                                     (national + state + utility)
   tweets_MMDD_HHMM.txt              X / Twitter feed
   nextdoor_MMDD_HHMM.txt            Nextdoor local posts
+  stations_MMDD_HHMM.txt            VarAC stations heard (via VarMap)
 
 Each new bulletin replaces the previous one of the same type,
 so the folder always holds exactly one current set.

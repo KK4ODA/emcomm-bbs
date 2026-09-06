@@ -287,6 +287,78 @@ class PlainTextGenerator:
         _write(filename, lines)
 
 
+    @staticmethod
+    def create_stations_txt(filename, data, hours, health=None, max_rows=60):
+        """Stations heard on VarAC, from VarMap's station list.
+
+        ``data`` is ``VarMapClient.stations()``; ``health`` (optional) is
+        ``VarMapClient.health()`` for the own-station line.
+        """
+        stations = data.get("stations", [])
+        lines = [f"STATIONS HEARD {_stamp()}  last {int(hours)}h  (VarAC via VarMap)"]
+        varac = (health or {}).get("varac") or {}
+        own = data.get("own") or {}
+        if varac.get("mycall") or own:
+            me = varac.get("mycall") or "own station"
+            grid = varac.get("my_locator") or ""
+            pos = f" {own['lat']:.2f},{own['lon']:.2f}" if own.get("lat") is not None else ""
+            lines.append(f"Own: {me} {grid}{pos}".rstrip())
+        lines.append(RULE)
+
+        located = sum(1 for s in stations if s.get("lat") is not None)
+        emcomm = sum(1 for s in stations if s.get("is_emcomm"))
+        bbs = sum(1 for s in stations if s.get("is_bbs"))
+        welfare = sum(1 for s in stations if (s.get("welfare") or {}).get("status"))
+        summary = f"{len(stations)} stations, {located} located, {emcomm} EmComm, {bbs} BBS"
+        if welfare:
+            summary += f", {welfare} welfare check-ins"
+        lines += [summary, ""]
+
+        if not stations:
+            lines.append("No stations heard in this period.")
+            _write(filename, lines)
+            return
+
+        lines.append(f"{'CALL':<10} {'GRID':<6} {'DIST':>6} {'BRG':>3} {'BAND':<4} {'SNR':>3} {'HEARD':>5}  TAGS")
+        lines.append("-" * WIDTH)
+        for s in stations[:max_rows]:
+            dist = (s.get("distance_display") or "").replace(" ", "")
+            brg = f"{s['bearing_deg']:03d}" if s.get("bearing_deg") is not None else "   "
+            snr = f"{s['last_snr_db']:+d}" if s.get("last_snr_db") is not None else "  -"
+            tags = []
+            if s.get("is_emcomm"):
+                tags.append("EMCOMM")
+            if s.get("is_bbs"):
+                tags.append("BBS")
+            if s.get("is_email_gateway"):
+                tags.append("EMAIL")
+            if s.get("is_away"):
+                tags.append("AWAY")
+            if s.get("last_cq_tag"):
+                tags.append(str(s["last_cq_tag"]))
+            wf = (s.get("welfare") or {}).get("status")
+            if wf:
+                tags.append("WF:" + {"SAFE": "SAFE", "NEED ASSISTANCE": "NEED", "TRAFFIC": "TRAF"}.get(wf, wf[:4]))
+            lines.append(f"{s.get('callsign', '')[:10]:<10} {(s.get('grid') or '-')[:6]:<6} {dist[:6]:>6} {brg} "
+                         f"{(s.get('last_band') or '')[:4]:<4} {snr:>3} {_age_short(s.get('heard_age_s')):>5}  "
+                         f"{' '.join(tags)}".rstrip())
+        if len(stations) > max_rows:
+            lines.append(f"... {len(stations) - max_rows} more not listed")
+        lines += ["", "DIST/BRG from own station. HEARD = time since last frame."]
+        _write(filename, lines)
+
+
+def _age_short(seconds):
+    if seconds is None:
+        return "-"
+    seconds = int(seconds)
+    if seconds < 3600:
+        return f"{max(1, seconds // 60)}m"
+    if seconds < 86400:
+        return f"{seconds // 3600}h"
+    return f"{seconds // 86400}d"
+
+
 def _age(hours):
     if hours < 1:
         return f"{int(hours * 60)}m ago"
