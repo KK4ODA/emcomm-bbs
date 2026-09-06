@@ -164,6 +164,22 @@ class DataSourceTests(unittest.TestCase):
         self.assertEqual(NextdoorFetcher.classify("Bake sale Saturday", "low"), "low")
 
 
+class VaracIniTests(unittest.TestCase):
+
+    def test_reads_folders_from_varac_ini(self):
+        import app_config
+        with tempfile.TemporaryDirectory() as d:
+            ini = Path(d) / "VarAC.ini"
+            ini.write_text("[MY_INFO]\nMycall=W1ABC\n[FILE_TRANSFER]\n"
+                           f"IncomingFilesDir={d}\\Files in\nIncomingFilesSizeLimit=10000\n"
+                           "[BBS]\nEnableBBS=ON\nBBSDirectory=D:\\BBS %stuff$\n", encoding="cp1252")
+            self.assertEqual(app_config.varac_setting("BBS", "BBSDirectory", ini), "D:\\BBS %stuff$")
+            self.assertEqual(app_config.varac_setting("FILE_TRANSFER", "IncomingFilesDir", ini),
+                             f"{d}\\Files in")
+            self.assertEqual(app_config.varac_setting("NOPE", "Missing", ini), "")
+            self.assertIsNone(app_config.read_varac_ini(Path(d) / "absent.ini"))
+
+
 class ConfigTests(unittest.TestCase):
 
     def test_roundtrip_and_tolerance(self):

@@ -3,6 +3,19 @@
 All notable changes to Emcomm BBS are recorded here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.5.1] — 2026-09-06
+
+### Changed
+
+- **Folders are read from VarAC.ini.** On a machine with VarAC installed in
+  `C:\VarAC`, the default bulletin folder is VarAC's `[BBS] BBSDirectory`
+  and the Welfare Board monitor folder is `[FILE_TRANSFER] IncomingFilesDir`,
+  so a fresh install needs no folder setup at all. The previous guesses
+  (Dropbox and Documents paths) remain as fallbacks, and Browse still
+  overrides. Only these two values are read; VarAC.ini is never written.
+- The user guide has a new chapter on the update check, installing an
+  update, rollback, and related troubleshooting.
+
 ## [1.5.0] — 2026-09-06
 
 ### Added

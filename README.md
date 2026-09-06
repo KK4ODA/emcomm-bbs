@@ -38,7 +38,10 @@ keys at all**.
 3. Double-click **`RUN.bat`**. It installs anything missing and launches the app.
 4. Tick the bulletins you want and click **Generate now**.
 
-Bulletins land in `C:\VarAC BBS\` by default — change it on the Settings tab.
+If VarAC is installed in `C:\VarAC`, the app reads its `VarAC.ini` and uses
+VarAC's own BBS folder for bulletins and its "Files in" folder for welfare
+check-ins. Otherwise bulletins land in `C:\VarAC BBS\` — change either
+folder on the Settings and Welfare Board tabs.
 
 ## Quick start — Linux / macOS
 

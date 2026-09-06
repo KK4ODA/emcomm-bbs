@@ -32,24 +32,66 @@ VALID_STATUSES = ["SAFE", "NEED ASSISTANCE", "TRAFFIC"]
 MAX_TIME_WINDOWS = 3
 
 
+VARAC_DIR = Path(r"C:\VarAC")
+VARAC_INI_CANDIDATES = [VARAC_DIR / "VarAC.ini"]
+
+
+def read_varac_ini(path=None):
+    """Parse VarAC.ini, or return None when it is missing or unreadable.
+
+    VarAC's .ini is not reliably UTF-8, may repeat keys, and its values
+    contain '%' and '$', so the parser is lenient and non-interpolating.
+    """
+    import configparser
+    for candidate in ([Path(path)] if path else VARAC_INI_CANDIDATES):
+        if not candidate.is_file():
+            continue
+        for encoding in ("utf-8", "cp1252", "latin-1"):
+            parser = configparser.ConfigParser(strict=False, interpolation=None)
+            try:
+                with open(candidate, encoding=encoding) as f:
+                    parser.read_file(f)
+                return parser
+            except (UnicodeDecodeError, configparser.Error):
+                continue
+            except OSError:      # VarAC rewrites the file with an exclusive lock when saving
+                return None
+    return None
+
+
+def varac_setting(section, key, ini_path=None):
+    """A path-like value from VarAC.ini, or '' when absent."""
+    parser = read_varac_ini(ini_path)
+    if parser is None:
+        return ""
+    return (parser.get(section, key, fallback="") or "").strip()
+
+
 def default_save_directory():
-    """Where bulletins go unless the operator picks somewhere else."""
+    """Where bulletins go: VarAC's own BBS folder when VarAC.ini names one."""
+    bbs = varac_setting("BBS", "BBSDirectory")
+    if bbs:
+        return bbs
     if sys.platform == "win32":
         return r"C:\VarAC BBS"
     return str(Path.home() / "VarAC BBS")
 
 
 def default_varac_dir(subfolder=""):
-    """Best-effort guess at the VarAC "Files in" folder.
+    """VarAC's "Files in" folder, read from VarAC.ini when possible.
 
-    Falls back to the bundled ``data/`` directories so the app works on any
-    machine; the operator can always override with Browse.
+    Falls back to common locations, then to the bundled ``data/`` directories
+    so the app works on any machine; the operator can always override.
     """
     home = Path.home()
-    candidates = [
+    candidates = []
+    incoming = varac_setting("FILE_TRANSFER", "IncomingFilesDir")
+    if incoming:
+        candidates.append(Path(incoming))
+    candidates += [
         *home.glob("Dropbox*/Ham Radio/Digital Modes/VarAC/Files in"),
         home / "Documents" / "VarAC" / "Files in",
-        Path("C:/VarAC/Files in"),
+        VARAC_DIR / "Files in",
     ]
     for base in candidates:
         try:
